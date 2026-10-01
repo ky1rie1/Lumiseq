@@ -1,0 +1,81 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: 'Noto Sans SC';
+  src: url('/fonts/NotoSansSC-VF.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+/* Custom scrollbars for high-density studio look */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #121215;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #586372;
+  border: 2px solid #121215;
+  border-radius: 8px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #8190a3;
+}
+
+/* Studio custom slider styling */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--ui-border, #424242);
+  height: 6px;
+  min-height: 6px;
+  border-radius: 999px;
+  outline: none;
+}
+
+input.scrubbable-range {
+  height: 24px;
+  background: transparent;
+  cursor: pointer;
+}
+
+input.scrubbable-range::-webkit-slider-runnable-track {
+  height: 7px;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--ui-border, #424242) 0 var(--slider-start), var(--ui-accent, #bdcbcd) var(--slider-start) var(--slider-end), var(--ui-border, #424242) var(--slider-end) 100%);
+  box-shadow: inset 0 1px 2px #181818, 0 1px 0 #ffffff12;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: var(--ui-text, #e7eaea);
+  cursor: pointer;
+  border: 2px solid var(--ui-base, #202020);
+  box-shadow: 0 1px 5px #0009;
+  transition: background-color var(--ui-control-motion, 130ms ease-out);
+}
+
+input[type="range"]:focus-visible {
+  outline: 2px solid var(--ui-accent, #bdcbcd) !important;
+  outline-offset: 6px;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  /* Fine sliders must stay geometrically stable: no scale on hover or press. */
+  background: var(--ui-accent-hover, #d1dcdd);
+}

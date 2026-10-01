@@ -1,0 +1,57 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "影序 Lumiseq",
+  "version": "../package.json",
+  "identifier": "com.aicreativestudio.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "影序 Lumiseq",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 960,
+        "minHeight": 640,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": false,
+        "center": true,
+        "dragDropEnabled": true,
+        "theme": "Dark",
+        "backgroundColor": "#202020"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"],
+    "fileAssociations": [
+      {
+        "ext": ["lsq", "lumiseq", "aistudio"],
+        "name": "影序 Studio 工程文件",
+        "description": "影序 Studio Project",
+        "role": "Editor"
+      },
+      {
+        "ext": ["cr2", "cr3", "nef", "arw", "dng", "orf", "rw2", "pef", "raf"],
+        "name": "RAW 相机文件",
+        "description": "RAW Camera Photo",
+        "role": "Viewer"
+      },
+      {
+        "ext": ["psd"],
+        "name": "Photoshop 文档",
+        "description": "Adobe Photoshop Document",
+        "role": "Editor"
+      }
+    ]
+  }
+}

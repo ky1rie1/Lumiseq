@@ -1,0 +1,67 @@
+/* One toolbar replaces the OS caption. Its empty spaces remain draggable. */
+.studio-header [data-tauri-drag-region], .studio-header[data-tauri-drag-region] { app-region: drag; }
+.studio-header :is(button,a,input,select,textarea), .studio-header button * { app-region: no-drag; }
+.studio-header {
+  height: 48px;
+  min-height: 48px;
+  padding: 0 10px;
+  gap: 16px;
+  user-select: none;
+}
+.studio-header.has-window-controls {
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto;
+  padding-right: 0;
+}
+.studio-header .header-capsule { gap: 2px; }
+.studio-header .header-end { justify-self: end; }
+.studio-header .workspace-switch { width: auto; gap: 3px; height: 32px; }
+.studio-header .workspace-switch button {
+  flex: none;
+  height: 32px;
+  min-width: 42px;
+  padding: 0 12px;
+  border: 0;
+  position: relative;
+}
+.studio-header .workspace-switch button.is-active {
+  background: var(--workbench-raised);
+  box-shadow: inset 0 -2px var(--workbench-accent);
+}
+.studio-header .brand-button { padding-right: 5px; }
+.studio-header .brand-studio { display: none; }
+.studio-header .history-actions { padding-right: 5px; margin-right: 0; }
+.studio-header .lucide { stroke-width: 1.75; }
+.window-controls {
+  height: 48px;
+  display: flex;
+  align-items: stretch;
+  flex: none;
+  border-left: 1px solid var(--workbench-divider);
+}
+.window-controls button {
+  width: 43px;
+  height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--workbench-muted);
+  transition: background-color var(--ui-control-motion), color var(--ui-control-motion);
+}
+.window-controls button:hover { color: var(--workbench-text); background: var(--workbench-hover); }
+.window-controls .window-close:hover { color: white; background: #b33b43; }
+.window-controls button:focus-visible { outline-offset: -4px; }
+:root .studio-app .window-controls button:not(:disabled):active { transform: none; background: var(--workbench-selected); }
+:root .studio-app .window-controls .window-close:not(:disabled):active { background: #942e35; }
+@media (max-width: 1180px) {
+  .studio-header { gap: 14px; }
+  .studio-header .workspace-switch button { padding: 0; width: 42px; }
+  .studio-header .workspace-switch button span { display: none; }
+  .studio-header .header-divider { margin: 0 3px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .window-controls button { transition: none; }
+}

@@ -1,0 +1,27 @@
+{
+  "camera_make": "Canon",
+  "camera_model": "Canon EOS R5",
+  "lens_model": "RF 24-70mm F2.8 L IS USM",
+  "iso": 400,
+  "shutter_speed": "1/500s",
+  "aperture": "f/2.8",
+  "focal_length": "50mm",
+  "capture_time": "2026:09:21 15:30:00",
+  "width": 8192,
+  "height": 5464,
+  "orientation": 1,
+  "white_balance_multipliers": [2.1484, 1.0, 1.4824, 1.0],
+  "daylight_multipliers": [2.052, 1.0, 1.551, 1.0],
+  "color_matrix": [
+    [0.8543, -0.2215, -0.0523],
+    [-0.4128, 1.2541, 0.1287],
+    [-0.0345, 0.0812, 0.7512]
+  ],
+  "black_levels": [512, 512, 512, 512],
+  "white_levels": [16383, 16383, 16383, 16383],
+  "cfa_pattern": "RGGB",
+  "bits_per_sample": 14,
+  "has_embedded_preview": true,
+  "gps_latitude": 35.6762,
+  "gps_longitude": 139.6503
+}

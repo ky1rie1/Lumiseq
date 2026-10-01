@@ -1,0 +1,54 @@
+<!doctype html><html lang="zh"><meta charset="utf-8"><title>全图去雾与小波降噪验证</title>
+<style>body{font:14px system-ui;background:#202126;color:#eee;padding:24px}pre{white-space:pre-wrap}</style>
+<h1>生产 WebGL 质量阶段与 CPU 浮点参考</h1><pre id="report">正在验证…</pre><canvas id="surface"></canvas>
+<script type="module">
+import { RenderGraph } from '/src/engine/pipeline/RenderGraph.ts';
+import { SpatialQualityPass } from '/src/engine/pipeline/SpatialQualityPass.ts';
+import { analyzeHaze,applyHaze } from '/src/engine/hazeAnalysis.ts';
+import { waveletDenoise,estimateWaveletNoise } from '/src/engine/waveletDenoise.ts';
+import { createDefaultDevelopSettings } from '/src/document/DevelopDocument.ts';
+const report={complete:false,passed:false,cases:[],errors:[]};
+try{
+ const canvas=document.querySelector('canvas'),gl=canvas.getContext('webgl2',{preserveDrawingBuffer:true});
+ if(!gl||!gl.getExtension('EXT_color_buffer_float'))throw new Error('WebGL2 float unavailable');
+ report.renderer=gl.getParameter(gl.RENDERER);const graph=new RenderGraph(gl),quality=new SpatialQualityPass(gl);
+ const w=64,h=48,source=new Float32Array(w*h*3);
+ for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+   const noise=(((x*13+y*17)%29)-14)/900;
+   source.set([.1+.25*x/w+noise,.22+.32*y/h-noise,.4+.2*x/w+noise*.7],(y*w+x)*3);
+ }
+ const profile={version:1,source_width:w,source_height:h,haze:analyzeHaze(source,w,h),noise:estimateWaveletNoise(source,w,h)};
+ const run=(name,luma,chroma,amount,scale=1,rect=[0,0,1,1],analysis=profile)=>{
+   canvas.width=w;canvas.height=h;graph.resize(w,h);
+   const texture=gl.createTexture();gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,texture);
+   for(const p of [gl.TEXTURE_WRAP_S,gl.TEXTURE_WRAP_T])gl.texParameteri(gl.TEXTURE_2D,p,gl.CLAMP_TO_EDGE);
+   for(const p of [gl.TEXTURE_MIN_FILTER,gl.TEXTURE_MAG_FILTER])gl.texParameteri(gl.TEXTURE_2D,p,gl.LINEAR);
+   const rgba=new Float32Array(w*h*4);
+   for(let y=0;y<h;y++)for(let x=0;x<w;x++){const a=((h-1-y)*w+x)*4;rgba.set(source.slice((y*w+x)*3,(y*w+x)*3+3),a);rgba[a+3]=1;}
+   gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA16F,w,h,0,gl.RGBA,gl.FLOAT,rgba);
+   graph.begin(texture);const s=createDefaultDevelopSettings(true);s.detail.lumaDenoise=luma;s.detail.chromaDenoise=chroma;
+   quality.denoise(graph,w,h,s,analysis,scale);quality.dehaze(graph,analysis,amount,rect);
+   const fbo=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,fbo);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,graph.readTexture,0);
+   const result=new Float32Array(w*h*4);gl.readPixels(0,0,w,h,gl.RGBA,gl.FLOAT,result);
+   if(gl.getError()!==gl.NO_ERROR)throw new Error(name+' GPU draw/read failure');
+   const cpu=waveletDenoise(source,w,h,luma,chroma,analysis.noise.map(v=>v*Math.min(1,scale)),scale);
+   let max=0,sum=0;
+   for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+     const at=(y*w+x)*3,rgb=Array.from(cpu.slice(at,at+3));
+     const expected=amount?applyHaze(rgb,analysis.haze,rect[0]+(x+.5)/w*rect[2],rect[1]+(y+.5)/h*rect[3],amount):rgb;
+     for(let c=0;c<3;c++){const delta=Math.abs(expected[c]-result[((h-1-y)*w+x)*4+c]);max=Math.max(max,delta);sum+=delta;}
+   }
+   report.cases.push({name,maxError:max,meanError:sum/(w*h*3),passed:max<.005});
+   gl.deleteFramebuffer(fbo);gl.deleteTexture(texture);
+ };
+ run('zero identity',0,0,0);run('luma',100,0,0);run('chroma',0,100,0);run('combined wavelet',100,100,0);
+ run('dehaze positive',0,0,70);run('dehaze negative',0,0,-70);run('combined quality',65,75,50);
+ run('reduced overview',65,75,50,.27);
+ const asymmetric={...profile,haze:{version:1,width:4,height:4,atmosphere:[.7,.8,.9],coefficients:Array.from({length:32},(_,i)=>i%2? .05+Math.floor(i/8)*.16:0)}};
+ run('top-origin noncentral crop',40,70,75,1,[.15,.12,.5,.38],asymmetric);
+ const signed={...profile,haze:{version:1,width:1,height:1,atmosphere:[.8,.9,1],coefficients:[0,.3]}};
+ run('signed restoration before downstream color',0,0,100,1,[0,0,1,1],signed);
+ quality.dispose();graph.dispose();report.passed=report.cases.every(c=>c.passed);
+}catch(error){report.errors.push(String(error));}
+report.complete=true;document.querySelector('#report').textContent=JSON.stringify(report,null,2);
+</script></html>

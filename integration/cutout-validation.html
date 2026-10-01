@@ -1,0 +1,12 @@
+<!doctype html><html lang="zh"><meta charset="utf-8"><title>本地抠图验证</title>
+<style>body{background:#25262a;color:#eee;font:14px system-ui;padding:24px}label{display:block;margin:16px 0}canvas{max-width:45vw;max-height:70vh;background:conic-gradient(#777 25%,#333 0 50%,#777 0 75%,#333 0);background-size:20px 20px}button{padding:12px}#status{white-space:pre-wrap}</style>
+<h1>本地抠图真实模型验证</h1><p>测试页面复用生产内置模型读取、校验、推理和软蒙版处理。权重与图像不上传。</p>
+<p>使用内置 BiRefNet Lite 512，无需模型下载或导入。</p><label>测试图像<input id="photo" type="file" accept="image/*"></label><button id="run">执行推理</button><pre id="status">等待文件</pre><canvas id="original"></canvas><canvas id="cutout"></canvas>
+<script type="module">
+import {CUTOUT_MODEL} from '/src/cutout/CutoutModelStore.ts';
+import {defaultLocalCutoutProvider} from '/src/cutout/LocalCutoutProvider.ts';
+import {resizeAlpha} from '/src/cutout/CutoutService.ts';
+const status=document.querySelector('#status'),button=document.querySelector('#run');
+
+button.onclick=async()=>{button.disabled=true;try{const bitmap=await createImageBitmap(document.querySelector('#photo').files[0]);const original=document.querySelector('#original');original.width=bitmap.width;original.height=bitmap.height;original.getContext('2d').drawImage(bitmap,0,0);bitmap.close();status.textContent='本地推理中…';const time=performance.now();const alpha=await defaultLocalCutoutProvider.infer(original,new AbortController().signal);const full=resizeAlpha(alpha,CUTOUT_MODEL.inputSize,CUTOUT_MODEL.inputSize,original.width,original.height);const target=document.querySelector('#cutout');target.width=original.width;target.height=original.height;const ctx=target.getContext('2d');ctx.drawImage(original,0,0);const pixels=ctx.getImageData(0,0,target.width,target.height);let background=0,foreground=0,soft=0;for(let i=0;i<full.length;i++){pixels.data[4*i+3]=Math.round(pixels.data[4*i+3]*full[i]/255);if(full[i]<10)background++;else if(full[i]>245)foreground++;else soft++;}ctx.putImageData(pixels,0,0);status.textContent=JSON.stringify({model:CUTOUT_MODEL.name,durationMs:Math.round(performance.now()-time),width:target.width,height:target.height,background,foreground,soft},null,2);}catch(error){status.textContent=String(error);}finally{button.disabled=false;}};
+</script></html>

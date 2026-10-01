@@ -1,0 +1,20 @@
+import {it,expect,vi,afterEach} from 'vitest';
+const native=vi.hoisted(()=>({subscribe:vi.fn(),invoke:vi.fn()}));
+vi.mock('@tauri-apps/api/webview',()=>({getCurrentWebview:()=>({onDragDropEvent:native.subscribe})}));
+vi.mock('@tauri-apps/api/core',()=>({invoke:native.invoke}));
+afterEach(()=>{vi.unstubAllGlobals();vi.clearAllMocks();});
+it('routes OS paths through native bytes and returns an owned cleanup',async()=>{
+  vi.stubGlobal('window',{__TAURI_INTERNALS__:{}});
+  vi.resetModules();
+  const {listenForNativeFileDrop,readSelectedNativeFile}=await import('../src/platform/nativeFileDrop');
+  const stop=vi.fn();let eventHandler!: (event:any)=>void;
+  native.subscribe.mockImplementation(async callback=>{eventHandler=callback;return stop;});
+  native.invoke.mockResolvedValue([1,2,3]);
+  const onPaths=vi.fn(),onHover=vi.fn();
+  const cleanup=await listenForNativeFileDrop(onPaths,onHover);
+  eventHandler({payload:{type:'enter',paths:['C:\\photo.png']}});
+  eventHandler({payload:{type:'drop',paths:['C:\\photo.png']}});
+  expect(onPaths).toHaveBeenCalledWith(['C:\\photo.png']);expect(onHover).toHaveBeenLastCalledWith(false);
+  const file=await readSelectedNativeFile('C:\\photo.png');expect(file.name).toBe('photo.png');expect(file.blob.size).toBe(3);
+  cleanup();expect(stop).toHaveBeenCalledOnce();
+});

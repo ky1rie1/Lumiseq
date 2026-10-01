@@ -1,0 +1,127 @@
+.selection-taskbar.selection-bar {
+  width: max-content;
+  max-width: min(960px, calc(100vw - 32px));
+  padding: 6px;
+  border-radius: 22px;
+  overflow: visible;
+  color: var(--ui-text);
+  background: var(--ui-raised);
+  border-color: var(--ui-border);
+  box-shadow: inset 0 1px var(--ui-rim);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  --glass-hover: 0;
+}
+
+.selection-taskbar.selection-bar::before,
+.selection-taskbar.selection-bar::after { display: none; }
+
+.selection-bar__row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.selection-bar__mode {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 13px;
+  background: var(--ui-base);
+  border: 1px solid var(--ui-divider);
+}
+
+.selection-bar__mode-button,
+.selection-bar__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 31px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: var(--ui-muted);
+  background: transparent;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  transition: background-color var(--ui-control-motion), color var(--ui-control-motion), border-color var(--ui-control-motion);
+}
+
+.selection-bar__mode-button { width: 31px; padding: 0; }
+.selection-bar__button:hover:not(:disabled),
+.selection-bar__mode-button:hover:not(:disabled) { color: var(--ui-text); background: var(--ui-hover); }
+.selection-bar__button.is-active,
+.selection-bar__mode-button.is-active {
+  color: var(--ui-text);
+  background: var(--ui-selected);
+  border-color: var(--ui-selected-border);
+}
+.selection-bar__button.is-primary { color: var(--ui-on-accent); background: var(--ui-accent); }
+.selection-bar__button.is-primary:hover:not(:disabled) { color: var(--ui-on-accent); background: var(--ui-accent-hover); }
+.selection-bar__button--danger:hover:not(:disabled) { color: var(--ui-danger); background: var(--ui-danger-surface); }
+.selection-bar__button:disabled,
+.selection-bar__mode-button:disabled { opacity: .45; cursor: not-allowed; }
+.selection-bar__button:focus-visible,
+.selection-bar__mode-button:focus-visible,
+.selection-bar__panel input:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 2px;
+}
+.selection-bar__divider { width: 1px; height: 18px; margin: 0 4px; background: var(--ui-border); }
+
+.selection-bar__panel {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 10px);
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: min(390px, calc(100vw - 32px));
+  padding: 14px;
+  border: 1px solid var(--ui-border);
+  border-radius: 16px;
+  color: var(--ui-text);
+  background: var(--ui-raised);
+  box-shadow: var(--glass-shadow);
+  z-index: 2;
+}
+.selection-bar__panel-title { margin-bottom: 12px; color: var(--ui-text); font-size: 12px; font-weight: 650; }
+.selection-bar__form-row { display: flex; align-items: center; gap: 7px; margin-top: 9px; white-space: nowrap; }
+.selection-bar__form-row label { min-width: 60px; color: var(--ui-muted); font-size: 11px; }
+.selection-bar__form-row input,
+.selection-bar__prompt {
+  min-height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  outline: none;
+  color: var(--ui-text);
+  background: var(--ui-base);
+  font-size: 12px;
+  transition: background-color var(--ui-control-motion), color var(--ui-control-motion), border-color var(--ui-control-motion);
+}
+.selection-bar__form-row input { width: 53px; text-align: center; }
+.selection-bar__unit,
+.selection-bar__hint { color: var(--ui-subtle); font-size: 11px; }
+.selection-bar__hint { display: block; margin: 0 0 8px; }
+.selection-bar__prompt { width: min(340px, calc(100vw - 62px)); }
+.selection-bar__choices,
+.selection-bar__panel-actions { display: flex; gap: 6px; }
+.selection-bar__panel-actions { justify-content: flex-end; margin-top: 12px; }
+.selection-bar__status { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 3px 8px 5px; color: var(--ui-accent); font-size: 11px; }
+
+@media (max-width: 700px) {
+  .selection-taskbar.selection-bar { border-radius: 17px; }
+  .selection-bar__divider { display: none; }
+  .selection-bar__button { padding: 0 8px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .selection-bar__button,
+  .selection-bar__mode-button,
+  .selection-bar__panel input { transition: none; }
+}

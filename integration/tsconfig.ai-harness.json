@@ -1,0 +1,13 @@
+{
+  "extends": "../tsconfig.json",
+  "include": [
+    "../src/vite-env.d.ts",
+    "ai-harness-validation.ts",
+    "aiHarnessPattern.ts",
+    "aiHarnessRawValidation.ts",
+    "aiHarnessRuntimeValidation.ts",
+    "aiHarnessCreativeValidation.ts",
+    "aiHarnessCreativeUi.tsx",
+    "aiPanelValidation.tsx"
+  ]
+}

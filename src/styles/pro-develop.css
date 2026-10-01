@@ -1,0 +1,81 @@
+/* Professional develop workspace: neutral viewing chrome, grouped controls. */
+.develop-workbench { background:var(--ui-base); }
+.develop-operation-bar { min-height:40px; background:var(--ui-panel) !important; border-color:var(--ui-border) !important; gap:12px; overflow-x:auto; }
+.develop-operation-bar > div:first-child { flex:1; }
+.develop-operation-bar .develop-operation-actions button { height:28px; border-color:var(--ui-border); background:var(--ui-raised); color:var(--ui-text); border-radius:4px; white-space:nowrap; }
+.develop-operation-bar .develop-operation-actions button:hover { background:var(--ui-hover); }
+.develop-operation-bar .develop-operation-actions svg { color:currentColor; }
+.develop-info-toggle { display:grid; place-items:center; flex:none; width:28px; height:28px; color:var(--ui-muted); border-radius:4px; }
+.develop-info-toggle:hover,.develop-info-toggle[aria-expanded=true] { background:var(--ui-hover); color:var(--ui-text); }
+.develop-photo-info { width:208px; background:var(--ui-panel) !important; border-color:var(--ui-border) !important; }
+.develop-photo-info[hidden],.develop-tool-section[hidden] { display:none !important; }
+.develop-photo-info > div > div > .bg-studio-850 { background:var(--ui-base); border-color:var(--ui-border); }
+.develop-controls-panel { width:320px; background:var(--ui-panel) !important; border-color:var(--ui-border) !important; min-height:0; overflow:hidden; }
+/* Bridge interface utilities only inside the RAW rails. Inline channel plots,
+   histogram strokes, range gradients, mask samples and image planes retain color. */
+:root :is(.develop-controls-panel,.develop-photo-info,.develop-operation-bar) :is(.text-studio-100,.text-studio-200) { color:var(--ui-text); }
+:root :is(.develop-controls-panel,.develop-photo-info,.develop-operation-bar) :is(.text-studio-300,.text-studio-400) { color:var(--ui-muted); }
+:root :is(.develop-controls-panel,.develop-photo-info,.develop-operation-bar) .text-studio-500 { color:var(--ui-subtle); }
+:root :is(.develop-controls-panel,.develop-photo-info) :is(.bg-studio-950,.bg-studio-900,.bg-studio-850) { background-color:var(--ui-base); }
+:root :is(.develop-controls-panel,.develop-photo-info) :is(.bg-studio-800,.bg-studio-750,.bg-studio-700) { background-color:var(--ui-raised); }
+:root :is(.develop-controls-panel,.develop-photo-info) :is(.border-studio-800,.border-studio-700) { border-color:var(--ui-border); }
+:root .develop-controls-panel :is(input:not([type=range]):not([type=color]):not([type=checkbox]):not([type=radio]),select,textarea) { background:var(--ui-base); color:var(--ui-text); border-color:var(--ui-border); }
+:root .develop-operation-actions :is(button[aria-pressed=true],button.bg-amber-950\/80,button.bg-cyan-950\/80) { background:var(--ui-selected); border-color:var(--ui-selected-border); color:var(--ui-accent); }
+.develop-controls-panel > div:first-child { flex:none; position:static; padding:10px 12px 8px; background:var(--ui-panel); border-color:var(--ui-border); box-shadow:none; }
+.develop-controls-panel > .p-3.space-y-2\.5 { flex:1; min-height:0; padding:8px 12px 0; gap:8px; }
+.develop-controls-panel .accordion-section { border:0; border-radius:0; background:transparent; border-bottom:1px solid var(--ui-border); }
+.develop-controls-panel .accordion-section-body { border:0; background:transparent; padding:6px 4px 12px; }
+.develop-controls-panel .accordion-section-header { min-height:35px; padding:6px 0; }
+.develop-controls-panel .accordion-section-header button { color:var(--ui-text); }
+.develop-controls-panel .scrubbable-input { min-height:39px; }
+.develop-controls-panel .scrubbable-label { color:var(--ui-muted); }
+.develop-controls-panel .scrubbable-value { color:var(--ui-text); }
+.develop-tool-browser { display:flex; flex-direction:column; flex:1; min-height:0; }
+.develop-tool-navigation { flex:none; padding-bottom:10px; }
+.develop-tool-groups { display:flex; gap:2px; margin-bottom:9px; border-bottom:1px solid var(--ui-border); }
+.develop-tool-groups button { flex:1; height:33px; border-bottom:2px solid transparent; color:var(--ui-muted); font-size:12px; }
+.develop-tool-groups button:hover { color:var(--ui-text); background:#ffffff06; }
+.develop-tool-groups button[aria-selected=true] { color:var(--ui-text); border-bottom-color:var(--ui-accent); font-weight:600; }
+.develop-tool-search { height:30px; display:flex; align-items:center; gap:7px; padding:0 8px; background:var(--ui-base); border:1px solid var(--ui-border); border-radius:4px; color:var(--ui-subtle); }
+.develop-tool-search input { width:100%; min-width:0; padding:0; border:0; background:transparent; outline:0; color:var(--ui-text); font-size:11px; }
+.develop-tool-search input::placeholder { color:var(--ui-subtle); }
+.develop-tool-search button { flex:none; display:grid; place-items:center; width:19px; height:22px; }
+.develop-tool-search:focus-within { border-color:var(--ui-accent); }
+.develop-tool-results { overflow-y:auto; min-height:0; flex:1; padding-right:3px; padding-bottom:12px; }
+.develop-search-summary,.develop-search-empty { padding:6px 0 12px; color:var(--ui-muted); font-size:11px; line-height:1.6; }
+.develop-histogram-actions { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.develop-warning-toggles { display:flex; gap:3px; }
+.develop-warning-toggles button { padding:3px 7px; border:1px solid var(--ui-border); border-radius:3px; color:var(--ui-muted); font-size:10px; }
+.develop-warning-toggles button:hover { background:var(--ui-hover); color:var(--ui-text); }
+.develop-warning-toggles button[aria-pressed=true] { border-color:var(--ui-accent); color:var(--ui-text); background:var(--ui-selected); }
+.develop-clipping-counts { color:var(--ui-muted); font-size:10px; font-variant-numeric:tabular-nums; }
+.develop-color-contract { color:var(--ui-muted); font-size:10px; }
+.develop-color-contract summary { cursor:pointer; padding:4px 0; color:var(--ui-muted); }
+.develop-color-contract dl { padding:5px 0; }
+.develop-color-contract dl > div { display:flex; gap:8px; margin-bottom:4px; }
+.develop-color-contract dt { width:28px; flex:none; color:var(--ui-muted); }
+.develop-color-contract dd { color:var(--ui-text); }
+.develop-color-contract p { line-height:1.6; margin-bottom:4px; }
+.develop-clipping-overlay { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+.develop-canvas-viewport.is-color-assessment .develop-photo-frame { outline:5px solid #f8f8f8; box-shadow:0 0 0 14px #767676; }
+.develop-view-controls { background:var(--ui-panel); border-color:var(--ui-border); color:var(--ui-text); }
+.develop-view-controls button[aria-pressed=true] { background:var(--ui-selected); color:var(--ui-text); }
+.develop-observation-bar { display:flex; align-items:center; justify-content:space-between; gap:16px; min-height:29px; padding:0 13px; border-top:1px solid var(--ui-border); background:var(--ui-panel); color:var(--ui-muted); font-size:10px; overflow:hidden; flex:none; }
+.develop-observation-source,.develop-color-readout { display:flex; align-items:center; gap:11px; white-space:nowrap; }
+.develop-observation-source { min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.develop-observation-source > span { color:var(--ui-subtle); }
+.develop-color-readout { flex:none; font-variant-numeric:tabular-nums; }
+.develop-color-readout i { width:12px; height:12px; border:1px solid var(--ui-subtle); border-radius:2px; }
+.develop-color-readout small { color:var(--ui-subtle); font-size:10px; }
+@media(max-width:1100px) { .develop-operation-actions button { font-size:10px; } .develop-operation-bar .font-mono { display:none; } .develop-photo-info { width:180px; } }
+@media(max-width:900px) { .develop-controls-panel { width:290px; } .develop-operation-actions { gap:4px; } .develop-operation-actions button { padding:0 5px; } .develop-observation-source { display:none; } .develop-observation-bar { justify-content:flex-end; } }
+@media(max-width:740px) { .develop-color-readout small { display:none; } .develop-photo-info { position:absolute; z-index:35; top:40px; bottom:29px; box-shadow:8px 0 20px #0005; } }
+@media(max-height:740px) {
+  .develop-histogram > svg,.develop-histogram > [role=status] { height:56px !important; }
+  .develop-controls-panel > div:first-child { padding-top:6px; padding-bottom:4px; max-height:45%; overflow-y:auto; }
+  .develop-controls-panel > .p-3.space-y-2\.5 { padding-top:5px; gap:5px; }
+  .develop-controls-panel > .p-3.space-y-2\.5 > button { padding-top:4px; padding-bottom:4px; }
+  .develop-tool-navigation { padding-bottom:6px; }
+  .develop-tool-groups { margin-bottom:5px; }
+  .develop-tool-groups button { height:29px; }
+}

@@ -1,0 +1,53 @@
+{
+  "name": "lumiseq",
+  "private": true,
+  "version": "0.9.5",
+  "description": "A Windows desktop workspace for RAW development, layered image editing, and AI-assisted creative workflows.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "node scripts/prepare-cutout-model.mjs && tsc -b && vite build && node scripts/prepare-cutout-model.mjs --verify-dist",
+    "model:download": "node scripts/prepare-cutout-model.mjs --download",
+    "release:prepare": "node scripts/prepare-release.mjs",
+    "clean": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/clean.ps1",
+    "brand:generate": "node scripts/generate-brand-assets.mjs",
+    "repo:check": "node scripts/check-repository.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-dialog": "^2.7.3",
+    "@tauri-apps/plugin-fs": "^2.5.2",
+    "ag-psd": "^31.0.2",
+    "lucide-react": "^1.16.0",
+    "onnxruntime-web": "1.30.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "zustand": "^5.0.3"
+  },
+  "devDependencies": {
+    "@napi-rs/canvas": "1.0.9",
+    "@tauri-apps/cli": "^2.11.5",
+    "@types/node": "^22.13.9",
+    "@types/react": "^19.0.10",
+    "@types/react-dom": "^19.0.4",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.5.3",
+    "sharp": "0.35.5",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.8.2",
+    "vite": "^6.2.0",
+    "vitest": "^4.1.11"
+  }
+}

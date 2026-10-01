@@ -1,0 +1,505 @@
+/* Final application theme. Chrome and controls share these tokens; photograph
+   pixels, canvas backgrounds, channel colors, masks and color swatches keep their values. */
+:root {
+  --ui-base: #202020;
+  --ui-panel: #262626;
+  --ui-raised: #2d2d2d;
+  --ui-hover: #353535;
+  --ui-border: #424242;
+  --ui-divider: #343434;
+  --ui-text: #e7eaea;
+  --ui-muted: #b3b8ba;
+  --ui-subtle: #999999;
+  --ui-accent: #bdcbcd;
+  --ui-accent-hover: #d1dcdd;
+  --ui-selected: #363a3b;
+  --ui-selected-border: #687375;
+  --ui-on-accent: #202424;
+  --ui-rim: #ffffff0a;
+  --ui-success: #aec3b4;
+  --ui-success-surface: #2d3730;
+  --ui-warning: #d1bf99;
+  --ui-warning-surface: #383329;
+  --ui-danger: #d6aaa5;
+  --ui-danger-surface: #3b2d2c;
+  --ui-control-radius: 5px;
+  --ui-panel-radius: 10px;
+  --ui-control-motion: 130ms ease-out;
+  --ui-press-duration: 90ms;
+  --ui-panel-motion: 180ms ease-out;
+  --ui-dialog-motion: 200ms ease-out;
+  --workbench-base: var(--ui-base);
+  --workbench-panel: var(--ui-panel);
+  --workbench-raised: var(--ui-raised);
+  --workbench-hover: var(--ui-hover);
+  --workbench-border: var(--ui-border);
+  --workbench-divider: var(--ui-divider);
+  --workbench-text: var(--ui-text);
+  --workbench-muted: var(--ui-muted);
+  --workbench-subtle: var(--ui-subtle);
+  --workbench-accent: var(--ui-accent);
+  --workbench-selected: var(--ui-selected);
+  --surface: var(--ui-panel);
+  --text-main: var(--ui-text);
+  --text-muted: var(--ui-muted);
+  --accent: var(--ui-accent);
+  --material-floating-bg: var(--ui-raised);
+  --material-panel-bg: var(--ui-panel);
+  --material-dock-bg: var(--ui-panel);
+  --material-rim-highlight: transparent;
+  --material-glass-border: var(--ui-border);
+  --material-glass-shadow: none;
+  --glass-fill: var(--ui-panel);
+  --glass-border: var(--ui-border);
+  --glass-blur: 0px;
+  --glass-highlight: transparent;
+  --glass-shadow: none;
+  color-scheme: dark;
+}
+
+/* Color and an inset edge give feedback without changing clickable geometry. */
+:root button,
+:root :is(.studio-app,.studio-modal,.studio-dialog,.settings-confirm-panel,.new-project-dialog,.quick-search) button {
+  transition: background-color var(--ui-control-motion), color var(--ui-control-motion),
+    border-color var(--ui-control-motion), opacity var(--ui-control-motion),
+    box-shadow var(--ui-control-motion);
+}
+:root button:not(:disabled):active {
+  transform: none !important;
+  transition-duration: var(--ui-press-duration);
+  box-shadow: inset 0 0 0 1px var(--ui-rim);
+}
+:root :is(input,select,textarea,summary,.scrubbable-label) {
+  transition: background-color var(--ui-control-motion), color var(--ui-control-motion), border-color var(--ui-control-motion);
+}
+:root :is(button,a,input,select,textarea,summary,[tabindex]):focus-visible {
+  outline: 2px solid var(--ui-accent) !important;
+  outline-offset: 2px;
+}
+:root :is(button,input,select,textarea):disabled {
+  cursor: not-allowed;
+  opacity: .45;
+}
+button:disabled { transform: none !important; }
+:root :is(input,select,textarea) { accent-color: var(--ui-accent); }
+/* Shared parameter and selection controls, used in both workspaces. */
+.segmented-control { padding: 2px; gap: 2px; border: 1px solid var(--ui-border); border-radius: 5px; background: var(--ui-base); }
+.segmented-control > button { min-height: 28px; padding: 0 8px; border: 1px solid transparent; border-radius: 3px; color: var(--ui-muted); font-size: 11px; font-weight: 500; }
+.segmented-control-sm > button { min-height: 32px; font-size: 12px; }
+.segmented-control > button:hover { background: var(--ui-hover); color: var(--ui-text); }
+.segmented-control > button[aria-pressed=true] { background: var(--ui-selected); color: var(--ui-text); border-color: var(--ui-selected-border); box-shadow: inset 0 1px var(--ui-rim); }
+:root .scrubbable-label { color: var(--ui-muted); }
+:root .scrubbable-label:hover { color: var(--ui-text); }
+:root .scrubbable-value { color: var(--ui-text); font-variant-numeric: tabular-nums; }
+:root .scrubbable-value:hover { color: var(--ui-accent); background: var(--ui-raised); }
+:root .scrubbable-default-mark { background: var(--ui-muted); box-shadow: 0 0 0 1px var(--ui-base); }
+:root .accordion-section-header { color: var(--ui-text); }
+:root .accordion-section-header svg { color: var(--ui-muted); }
+:root .accordion-section-header button { min-height: 28px; }
+:root .accordion-section-header button:hover { color: var(--ui-text); }
+:root :is(.studio-app,.studio-modal,.studio-dialog,.settings-confirm-panel,.new-project-dialog) svg.lucide {
+  stroke-width: 1.75;
+}
+::-webkit-scrollbar-track { background: var(--ui-base); }
+::-webkit-scrollbar-thumb { background: #5c5c5c; border-color: var(--ui-base); }
+::-webkit-scrollbar-thumb:hover { background: #757575; }
+:root .icon-hint::after {
+  background: var(--ui-raised);
+  border-color: var(--ui-border);
+  color: var(--ui-text);
+  box-shadow: 0 4px 12px #0004;
+}
+
+/* Dialogs use opaque neutral material. Never set display here: native <dialog>
+   must retain the browser's closed state and its focus/inert behavior. Settings
+   modal specificity also protects this theme when component CSS loads later. */
+:root :is(.studio-modal,.studio-dialog,.new-project-dialog,.settings-confirm-panel),
+:root[data-glass] :is(.studio-modal,.studio-dialog,.new-project-dialog,.settings-confirm-panel),
+:root :is(.settings-center,.provider-settings,.external-agent-settings,.diagnostic-settings,.model-settings).studio-modal {
+  background: var(--ui-panel) !important;
+  background-image: none !important;
+  border-color: var(--ui-border) !important;
+  border-radius: var(--ui-panel-radius) !important;
+  color: var(--ui-text);
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: inset 0 1px var(--ui-rim), 0 18px 54px #0006 !important;
+}
+:root :is(.studio-overlay,.new-project-backdrop,.settings-confirm-overlay),
+:root .settings-overlay.studio-overlay {
+  background: #101010b3 !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+:root .studio-dialog::backdrop { background: #101010b3; backdrop-filter: none; }
+:root :is(.studio-dialog,.studio-modal).glass-surface::before,
+:root :is(.studio-dialog,.studio-modal).glass-surface::after { content: none; }
+:root .dialog-heading {
+  border-color: var(--ui-divider);
+  background: var(--ui-panel);
+  color: var(--ui-text);
+}
+:root :is(.studio-modal,.studio-dialog,.settings-confirm-panel,.new-project-dialog)
+  :is(input:not([type=range]):not([type=color]):not([type=checkbox]):not([type=radio]),select,textarea) {
+  color: var(--ui-text) !important;
+  background-color: var(--ui-base) !important;
+  border-color: var(--ui-border) !important;
+  border-radius: var(--ui-control-radius);
+  box-shadow: none;
+}
+:root :is(.studio-modal,.studio-dialog) :is(input,textarea)::placeholder { color: var(--ui-subtle); }
+:root :is(.studio-modal,.studio-dialog,.new-project-dialog) select option {
+  color: var(--ui-text);
+  background: var(--ui-panel);
+}
+:root :is(.studio-modal,.studio-dialog,.new-project-dialog) :is(input,select,textarea):focus {
+  border-color: var(--ui-accent) !important;
+}
+:root :is(.studio-modal,.studio-dialog) [aria-invalid=true] { border-color: var(--ui-danger) !important; }
+
+/* Edit utility colors are bridged only inside interface rails. The workspace
+   canvas, photographs, color samples and channel/gradient ranges are excluded. */
+:root :is(.editor-side-panel,.edit-operation-bar,.editor-options) :is(.bg-studio-800,.bg-studio-750,.bg-studio-700) {
+  background-color: var(--ui-raised);
+}
+:root :is(.editor-side-panel,.edit-operation-bar,.editor-options) :is(.bg-studio-950,.bg-studio-900,.bg-studio-850) {
+  background-color: var(--ui-base);
+}
+:root :is(.editor-side-panel,.edit-operation-bar,.editor-options) :is(.text-studio-100,.text-studio-200) { color: var(--ui-text); }
+:root :is(.editor-side-panel,.edit-operation-bar,.editor-options) :is(.text-studio-300,.text-studio-400) { color: var(--ui-muted); }
+:root :is(.editor-side-panel,.edit-operation-bar,.editor-options) :is(.text-studio-500,.text-studio-600) { color: var(--ui-subtle); }
+:root :is(.editor-side-panel,.edit-operation-bar,.editor-options) :is(.border-studio-800,.border-studio-700,.border-studio-600) { border-color: var(--ui-border); }
+:root :is(.editor-side-panel,.edit-operation-bar,.editor-options)
+  :is(.hover\:bg-studio-700,.hover\:bg-studio-750,.hover\:bg-studio-800,.hover\:bg-white\/5,.hover\:bg-white\/10):hover:not(:disabled) {
+  background-color: var(--ui-hover);
+}
+:root :is(.editor-side-panel,.edit-operation-bar,.editor-options)
+  :is(.hover\:text-studio-100,.hover\:text-studio-200):hover:not(:disabled) { color: var(--ui-text); }
+:root :is(.editor-side-panel,.edit-operation-bar,.editor-options)
+  :is(.text-white\/30,.text-white\/40,.text-white\/50,.text-white\/60,.text-white\/70) { color: var(--ui-muted); }
+:root :is(.editor-side-panel,.edit-operation-bar,.editor-options)
+  :is(.text-white\/80,.text-white\/90) { color: var(--ui-text); }
+:root :is(.editor-side-panel,.editor-options)
+  :is(.bg-\[\#18181b\],.bg-\[\#27272a\],.bg-\[\#27272a\]\/50):not(input[type=range]):not(input[type=color]) {
+  background-color: var(--ui-raised);
+}
+:root :is(.editor-side-panel,.editor-options)
+  :is(.border-white\/5,.border-white\/10) { border-color: var(--ui-divider); }
+:root :is(.editor-side-panel,.edit-operation-bar,.editor-options)
+  :is(input:not([type=range]):not([type=color]):not([type=checkbox]):not([type=radio]),select,textarea) {
+  background-color: var(--ui-base); border-color: var(--ui-border); color: var(--ui-text);
+}
+:root :is(.editor-side-panel,.edit-operation-bar,.editor-options) select option { background: var(--ui-panel); color: var(--ui-text); }
+:root :is(.editor-side-panel,.edit-operation-bar,.editor-options) .icon-button:hover:not(:disabled) {
+  background: var(--ui-hover); color: var(--ui-text);
+}
+:root :is(.editor-side-panel,.edit-operation-bar,.editor-options)
+  svg:is(.text-sky-400,.text-cyan-400,.text-purple-400,.text-yellow-400,.text-indigo-400,.text-amber-400,.text-emerald-400) { color: var(--ui-muted); }
+:root .editor-side-panel .layer-empty { color: var(--ui-muted); }
+:root .edit-document-info span.bg-studio-700 { background: var(--ui-subtle); }
+:root .editor-side-panel .hover\:text-rose-400:hover { color: var(--ui-danger); }
+:root .editor-side-panel [role=alert].text-red-400 { color: var(--ui-danger); }
+:root .editor-side-panel button.bg-\[\#3f3f46\] { background: var(--ui-selected); color: var(--ui-text); }
+:root .editor-side-panel button.bg-cyan-500\/10 {
+  background: var(--ui-selected); border-color: var(--ui-selected-border); color: var(--ui-accent);
+}
+:root .editor-side-panel button.bg-cyan-500\/10:hover { background: var(--ui-hover); color: var(--ui-text); }
+:root .editor-side-panel .editor-panel-tabs > button[aria-selected=true] {
+  background: var(--ui-raised); color: var(--ui-text); border-bottom-color: var(--ui-accent);
+}
+:root .editor-options button[aria-pressed=true],
+:root .editor-options button.bg-\[\#b6d2f51c\] { background: var(--ui-selected); color: var(--ui-text); }
+:root .editor-options button.bg-\[\#c7dbf5\] { background: var(--ui-accent); color: var(--ui-on-accent); }
+:root .editor-options button.bg-\[\#c7dbf5\]:hover { background: var(--ui-accent-hover); }
+
+/* Settings: one surface family and the same selected state as the workbench. */
+:root .settings-center :is(.settings-center-header,.settings-sidebar,.settings-group,
+  .settings-advanced,.settings-builtin,.settings-save-footer,.settings-search,
+  .settings-diagnostics div,.settings-embedded .provider-settings-list) { border-color: var(--ui-divider); }
+:root .settings-sidebar { background: var(--ui-base); }
+:root .settings-search { background: var(--ui-panel); border-color: var(--ui-border); }
+:root .settings-center .settings-search input { background: transparent !important; }
+:root .settings-center :is(.settings-eyebrow,.settings-sidebar-note,.settings-search-empty,
+  .settings-page-heading p,.settings-group h3,.settings-row-copy p,.settings-help,
+  .settings-builtin p,.settings-service-intro p,.settings-save-footer span,
+  .settings-diagnostics dt,.settings-color,.settings-advanced summary,.settings-shortcuts div) {
+  color: var(--ui-muted);
+}
+:root .settings-center :is(.settings-row-copy strong,.settings-diagnostics dd,.settings-shortcuts kbd) { color: var(--ui-text); }
+:root .settings-center .settings-sidebar nav button { color: var(--ui-muted); border-radius: var(--ui-control-radius); }
+:root .settings-center .settings-sidebar nav button:hover { color: var(--ui-text); background: var(--ui-raised); }
+:root .settings-center .settings-sidebar nav button.is-active { color: var(--ui-text); background: var(--ui-selected); }
+:root .settings-center .settings-sidebar nav button.is-active::before { background: var(--ui-accent); }
+:root .settings-center .settings-sidebar nav svg { color: inherit; stroke-width: 1.75; }
+:root :is(.settings-close,.provider-settings-close,.new-project-close,.dialog-heading .icon-button) {
+  color: var(--ui-muted); border-radius: var(--ui-control-radius); border-color: var(--ui-border); background: transparent;
+}
+:root :is(.settings-close,.provider-settings-close,.new-project-close,.dialog-heading .icon-button):hover {
+  background: var(--ui-hover); color: var(--ui-text);
+}
+:root :is(.settings-row,.settings-group-actions,.settings-draft-warning,.settings-token-row,
+  .external-agent-settings,.settings-confirm-actions) button:not(.settings-save-button) {
+  color: var(--ui-text); background: var(--ui-raised); border-color: var(--ui-border); border-radius: var(--ui-control-radius);
+}
+:root :is(.settings-row,.settings-group-actions,.settings-draft-warning,.settings-token-row,
+  .external-agent-settings,.settings-confirm-actions) button:not(.settings-save-button):hover:not(:disabled) {
+  background: var(--ui-hover); color: var(--ui-text); border-color: #565656;
+}
+:root .settings-save-footer { background: var(--ui-panel); border-color: var(--ui-divider); }
+:root :is(.settings-save-button,.settings-confirm-actions .settings-save-button) {
+  background: var(--ui-accent); border-color: var(--ui-accent); color: var(--ui-on-accent);
+}
+:root :is(.settings-save-button,.settings-confirm-actions .settings-save-button):hover:not(:disabled) {
+  background: var(--ui-accent-hover); border-color: var(--ui-accent-hover); color: var(--ui-on-accent);
+}
+:root .settings-confirm-panel p { color: var(--ui-muted); }
+:root .settings-shortcuts kbd { background: var(--ui-raised); border-color: var(--ui-border); }
+:root .settings-feedback { background: var(--ui-raised); border-color: var(--ui-border); color: var(--ui-muted); }
+:root .settings-feedback-error,
+:root .settings-confirm-panel .settings-confirm-error { color: var(--ui-danger); }
+:root .settings-feedback-error { background: var(--ui-danger-surface); border-color: #67504d; }
+:root .settings-draft-warning { background: var(--ui-warning-surface); color: var(--ui-warning); }
+:root .model-settings progress { accent-color: var(--ui-accent); }
+
+/* Appearance diagram mirrors the solid professional workbench. Its canvas
+   keeps the user's exact background value while density and motion remain
+   visible in the surrounding controls. */
+:root .settings-appearance-preview { background: var(--ui-base); border-color: var(--ui-border); }
+:root :is(.settings-preview-titlebar,.settings-preview-commandbar,.settings-preview-toolrail,
+  .settings-preview-inspector,.settings-preview-status) { border-color: var(--ui-divider); }
+:root :is(.settings-preview-commandbar,.settings-preview-toolrail,.settings-preview-inspector) {
+  background: var(--ui-panel);
+}
+
+/* Service configuration retains its established responsive layout. */
+:root :is(.provider-settings-header,.provider-settings-tabs,.provider-settings-list) { border-color: var(--ui-divider); }
+:root .provider-settings-list { background: var(--ui-base); }
+:root :is(.provider-settings-eyebrow,.provider-settings-overline,.provider-settings-list-title,
+  .provider-settings-header p,.provider-settings-intro p,.provider-settings-hint,
+  .provider-settings-service-copy small,.provider-settings-secret small,
+  .provider-settings-choice-group small,.provider-settings label em) { color: var(--ui-muted); }
+:root .provider-settings-tabs button { color: var(--ui-muted); border-radius: var(--ui-control-radius); }
+:root .provider-settings-tabs button:hover { background: var(--ui-raised); color: var(--ui-text); }
+:root .provider-settings-tabs button.is-active { background: var(--ui-selected); color: var(--ui-text); border-color: var(--ui-border); }
+:root .settings-center .provider-settings-tabs button { background: transparent; }
+:root .settings-center .provider-settings-tabs button.is-active::after { background: var(--ui-accent); }
+:root .provider-settings-service { color: var(--ui-muted); border-radius: var(--ui-control-radius); }
+:root .provider-settings-service:hover { background: var(--ui-hover); }
+:root .provider-settings-service.is-selected,
+:root .settings-center .provider-settings-service.is-selected { color: var(--ui-text); background: var(--ui-selected); border-color: var(--ui-border); }
+:root .provider-settings-service-mark,
+:root .settings-center .provider-settings-service.is-selected .provider-settings-service-mark {
+  background: var(--ui-raised); border-color: var(--ui-border); color: var(--ui-muted); border-radius: var(--ui-control-radius);
+}
+:root .provider-settings-service svg { color: var(--ui-accent); }
+:root .provider-settings-current { background: var(--ui-selected); color: var(--ui-accent); border-radius: 4px; }
+:root .provider-settings-add { color: var(--ui-muted); border-color: var(--ui-border); border-radius: var(--ui-control-radius); }
+:root .provider-settings-add:hover { color: var(--ui-text); background: var(--ui-raised); border-color: #565656; }
+:root .provider-settings :is(.provider-settings-fields,.provider-settings-routing-grid) label { color: var(--ui-muted); }
+:root :is(.provider-settings-secret,.provider-settings-choice-group,.provider-settings-image-config,
+  .provider-settings-routing-grid label) { background: var(--ui-raised); border-color: var(--ui-border); border-radius: 6px; }
+:root .settings-center :is(.provider-settings-secret,.provider-settings-choice-group,.provider-settings-image-config,
+  .provider-settings-routing-grid label) { background: transparent; border-color: var(--ui-divider); }
+:root :is(.provider-settings-choice-group legend,.provider-settings-choice-group strong) { color: var(--ui-text); }
+:root .provider-settings-secret-heading span { color: var(--ui-muted); }
+:root .provider-settings-key-input button { color: var(--ui-muted); border-radius: var(--ui-control-radius); }
+:root .provider-settings-key-input button:hover { color: var(--ui-text); background: var(--ui-hover); }
+:root :is(.provider-settings-secondary,.provider-settings-delete) { border-color: var(--ui-border); background: var(--ui-raised); border-radius: var(--ui-control-radius); color: var(--ui-text); }
+:root :is(.provider-settings-secondary,.provider-settings-delete):hover { background: var(--ui-hover); }
+:root .provider-settings-delete,
+:root .provider-settings-text-button { color: var(--ui-danger); }
+:root .provider-settings-text-button:hover { color: #e5bdb8; }
+:root .provider-settings-primary,
+:root .settings-center .provider-settings-primary { color: var(--ui-on-accent); background: var(--ui-accent); border-color: var(--ui-accent); border-radius: var(--ui-control-radius); }
+:root .provider-settings-primary:hover,
+:root .settings-center .provider-settings-primary:hover { background: var(--ui-accent-hover); border-color: var(--ui-accent-hover); }
+:root .provider-settings-notice,
+:root .settings-center .provider-settings-notice { background: var(--ui-raised); color: var(--ui-muted); border-color: var(--ui-border); }
+:root .provider-settings-result.is-success { background: var(--ui-success-surface); color: var(--ui-success); }
+:root .provider-settings-result.is-error { background: var(--ui-danger-surface); color: var(--ui-danger); }
+
+/* Cutout chrome is neutral. Background samples, preview pixels and the brush
+   cursor remain the color selected or required by the image operation. */
+:root :is(.cutout-controls,.cutout-footer,.cutout-view-controls,.cutout-preview-caption,
+  .cutout-control-section + .cutout-control-section,.cutout-secondary-actions) { border-color: var(--ui-divider); }
+:root :is(.cutout-controls,.cutout-footer) { background: var(--ui-panel); }
+:root :is(.cutout-visual,.cutout-preview) { background: var(--ui-base); }
+:root :is(.cutout-view-controls,.cutout-preview-caption) { background: var(--ui-base); }
+:root .cutout-loading { background: var(--ui-base); color: var(--ui-muted); }
+:root .cutout-segmented { background: var(--ui-base); border-color: var(--ui-border); border-radius: 6px; }
+:root .cutout-segmented button { color: var(--ui-muted); }
+:root .cutout-segmented button:hover:not(:disabled) { background: var(--ui-hover); color: var(--ui-text); }
+:root .cutout-segmented button[aria-pressed=true] { background: var(--ui-selected); border-color: var(--ui-selected-border); color: var(--ui-text); }
+:root .cutout-backgrounds button[aria-pressed=true] { background: var(--ui-selected); border-color: var(--ui-accent); }
+:root .cutout-backgrounds button:hover { background: var(--ui-hover); }
+:root :is(.cutout-preview-caption,.cutout-tool-hint,.cutout-section-note,.cutout-section-heading > span,
+  .cutout-slider output small,.cutout-feedback small,.cutout-quiet-button,.cutout-icon-button) { color: var(--ui-muted); }
+:root :is(.cutout-section-heading h3,.cutout-slider output,.cutout-feedback p) { color: var(--ui-text); }
+:root .cutout-slider { color: var(--ui-muted); }
+:root .cutout-state-dot { background: var(--ui-accent); }
+:root .cutout-feedback p.cutout-error { color: var(--ui-danger); }
+:root .cutout-button { background: var(--ui-raised); border-color: var(--ui-border); color: var(--ui-text); }
+:root .cutout-button:hover { background: var(--ui-hover); }
+:root .cutout-apply-button { background: var(--ui-accent); border-color: var(--ui-accent); color: var(--ui-on-accent); }
+:root .cutout-apply-button:hover:not(:disabled) { background: var(--ui-accent-hover); border-color: var(--ui-accent-hover); }
+:root .cutout-icon-button:hover { background: var(--ui-hover); }
+:root .cutout-quiet-button:hover:not(:disabled) { color: var(--ui-text); }
+
+/* Utility bridge is restricted to AI surfaces. Color-bearing canvas utilities
+   and picker swatches are deliberately outside these selectors. */
+:root .ai-dock :is(.text-studio-100,.text-studio-200) { color: var(--ui-text); }
+:root .ai-dock :is(.text-studio-300,.text-studio-400) { color: var(--ui-muted); }
+:root .ai-dock .text-studio-500 { color: var(--ui-subtle); }
+:root .ai-dock :is(.bg-studio-800,.bg-studio-750,.bg-studio-700) { background-color: var(--ui-raised); }
+:root .ai-dock :is(.bg-studio-950,.bg-studio-950\/80,.bg-studio-900,.bg-studio-850) { background-color: var(--ui-base); }
+:root .ai-dock :is(.border-studio-800,.border-studio-700) { border-color: var(--ui-border); }
+:root .ai-dock :is(.text-blue-300,.text-blue-400) { color: var(--ui-accent); }
+:root .ai-dock :is(.text-emerald-300,.text-emerald-400) { color: var(--ui-success); }
+:root .ai-dock :is(.text-amber-200,.text-amber-300,.text-amber-400) { color: var(--ui-warning); }
+:root .ai-dock :is(.text-rose-200,.text-rose-300,.text-rose-300\/80,.text-rose-400) { color: var(--ui-danger); }
+:root .ai-dock .bg-emerald-950 { background-color: var(--ui-success-surface); }
+:root .ai-dock .bg-rose-950 { background-color: var(--ui-danger-surface); }
+:root .ai-dock .bg-blue-950 { background-color: var(--ui-selected); }
+:root .ai-dock .bg-zinc-800 { background-color: var(--ui-raised); }
+:root .ai-dock :is(.border-emerald-800,.border-rose-800,.border-rose-900,.border-blue-800,.border-zinc-700) { border-color: var(--ui-border); }
+:root .ai-dock button:hover:not(:disabled):not(.ai-send-button):not(.ai-confirm-button) { background-color: var(--ui-hover); }
+:root .ai-permission-badge { background: var(--ui-raised); border-color: var(--ui-border); color: var(--ui-muted); }
+:root .ai-dock .ai-permission-badge svg { color: inherit; }
+:root .ai-dock :is(.ai-suggestion,.ai-run-action) svg:is(.text-amber-400,.text-blue-400) { color: var(--ui-muted); }
+:root .ai-dock .ai-brand-icon svg { color: var(--ui-accent); }
+:root .ai-confirmation { background: var(--ui-warning-surface); border-color: #5b5343; color: var(--ui-warning); }
+:root .ai-confirmation-details { background: var(--ui-base); color: var(--ui-muted); overflow-wrap: anywhere; }
+:root .ai-confirm-button { background: var(--ui-accent); color: var(--ui-on-accent); }
+:root .ai-confirm-button:hover { background: var(--ui-accent-hover); }
+:root .ai-active-run { background: var(--ui-panel); border-color: var(--ui-selected-border); }
+:root .ai-stop-button,
+:root .ai-send-button.is-stop { background: var(--ui-danger-surface); color: var(--ui-danger); border-color: #67504d; }
+:root .ai-dock .ai-send-button.is-stop:hover { background: #493735; }
+:root .ai-dock :is(.ai-run,.ai-run-action) { border-color: var(--ui-border) !important; }
+:root .ai-no-document { background: var(--ui-base); border-color: var(--ui-border); color: var(--ui-muted); }
+:root .ai-no-document strong { color: var(--ui-text); }
+:root .ai-no-document p { color: var(--ui-muted); }
+:root .ai-no-document button { background: var(--ui-raised); border-color: var(--ui-border); color: var(--ui-text); }
+
+/* Export, search and picker controls share the same primary action. */
+:root .quick-search-layer { background: #10101080; }
+:root .quick-search {
+  background: var(--ui-panel); border-color: var(--ui-border); color: var(--ui-text);
+  border-radius: var(--ui-panel-radius); box-shadow: 0 12px 36px #0006;
+  backdrop-filter: none !important; -webkit-backdrop-filter: none !important;
+}
+:root .quick-search::before,:root .quick-search::after { content: none; }
+:root .quick-search-heading strong,:root .quick-search-results strong { color: var(--ui-text); }
+:root .quick-search-heading span { color: var(--ui-muted); }
+:root .quick-search-input:focus-within { background: var(--ui-base); border-bottom-color: var(--ui-accent); }
+:root .quick-search-input input { color: var(--ui-text); }
+:root .quick-search-input input::placeholder { color: var(--ui-subtle); }
+:root :is(.quick-search-input,.quick-search-footer,.quick-search-group-label,.quick-search-empty,
+  .quick-search-result-icon) { color: var(--ui-muted); border-color: var(--ui-divider); }
+:root .quick-search-group button { color: var(--ui-text); border-radius: var(--ui-control-radius); }
+:root .quick-search-group button.is-selected { background: var(--ui-selected); }
+:root .quick-search-group button:hover { background: var(--ui-hover); }
+:root .quick-search-group button small { color: var(--ui-muted); }
+:root .color-picker > :is(.border-b,.border-t),
+:root .color-picker .space-y-3 { background-color: var(--ui-panel); border-color: var(--ui-divider); }
+:root .color-picker :is(.text-white\/40,.text-white\/50,.text-white\/60,.text-white\/70) { color: var(--ui-muted); }
+:root .color-picker :is(.text-white\/80,.text-white\/90) { color: var(--ui-text); }
+:root .color-picker .text-red-300 { color: var(--ui-danger); }
+:root .color-picker button { color: var(--ui-muted); }
+:root .color-picker button:hover { background: var(--ui-hover); color: var(--ui-text); }
+:root .color-picker .color-picker-apply,
+:root .image-export-footer .primary { background: var(--ui-accent); border-color: var(--ui-accent); color: var(--ui-on-accent); }
+:root .color-picker .color-picker-apply:hover,
+:root .image-export-footer .primary:hover { background: var(--ui-accent-hover); border-color: var(--ui-accent-hover); color: var(--ui-on-accent); }
+:root :is(.image-export-section,.image-export-footer,.image-export-formats button) { border-color: var(--ui-divider); }
+:root .image-export-formats button { color: var(--ui-text); background: var(--ui-base); border-radius: 6px; }
+:root .image-export-formats button[aria-pressed=true] { background: var(--ui-selected); border-color: var(--ui-selected-border); }
+:root :is(.image-export-intro span,.image-export-intro small,.image-export-label,.image-export-note,
+  .image-export-formats small,.image-export-color p,.image-export-size) { color: var(--ui-muted); }
+:root .image-export-intro strong { color: var(--ui-text); }
+:root .image-export-dialog { color: var(--ui-text); }
+:root :is(.image-export-label small,.image-export-size label) { color: var(--ui-muted); }
+:root .image-export-label strong { color: var(--ui-text); }
+:root .image-export-footer button { background: var(--ui-raised); border-color: var(--ui-border); color: var(--ui-text); }
+:root .image-export-error { color: var(--ui-danger); background: var(--ui-danger-surface); }
+
+/* Document-close confirmation uses the same secondary and primary actions. */
+:root .save-changes-dialog { color: var(--ui-text); }
+:root .save-changes-dialog small { color: var(--ui-muted); }
+:root .save-changes-actions button {
+  background: var(--ui-raised); border-color: var(--ui-border); color: var(--ui-text); border-radius: var(--ui-control-radius);
+}
+:root .save-changes-actions button:hover:not(:disabled) { background: var(--ui-hover); border-color: #565656; }
+:root .save-changes-actions button.primary { background: var(--ui-accent); border-color: var(--ui-accent); color: var(--ui-on-accent); }
+:root .save-changes-actions button.primary:hover:not(:disabled) { background: var(--ui-accent-hover); border-color: var(--ui-accent-hover); }
+
+/* New document chrome uses the same tokens; the actual color samples are inline
+   on .new-project-colors i and are never overridden here. */
+:root :is(.new-project-header,.new-project-main,.new-project-footer) { border-color: var(--ui-divider); }
+:root :is(.new-project-eyebrow,.new-project-header p,.new-project-section-label,
+  .new-project-field,.new-project-field span,.new-project-footer,
+  .new-project-presets small,.new-project-open-file small) { color: var(--ui-muted); }
+:root :is(.new-project-presets strong,.new-project-open-file strong) { color: var(--ui-text); }
+:root :is(.new-project-presets button,.new-project-open-file,.new-project-colors button,.new-project-footer button) {
+  background: var(--ui-raised); border-color: var(--ui-border); color: var(--ui-muted); border-radius: var(--ui-control-radius);
+}
+:root :is(.new-project-presets button,.new-project-open-file,.new-project-colors button,.new-project-footer button):hover {
+  background: var(--ui-hover); border-color: #565656; color: var(--ui-text);
+}
+:root .new-project-presets button.is-selected,
+:root .new-project-colors button[aria-pressed=true] { background: var(--ui-selected); border-color: var(--ui-selected-border); color: var(--ui-accent); }
+:root .new-project-footer .new-project-create {
+  background: var(--ui-accent); border-color: var(--ui-accent); color: var(--ui-on-accent);
+}
+:root .new-project-footer .new-project-create:hover {
+  background: var(--ui-accent-hover); border-color: var(--ui-accent-hover); color: var(--ui-on-accent);
+}
+:root .new-project-error { color: var(--ui-danger); }
+
+/* Surface entry is opacity only, keeping the photo and control coordinates fixed. */
+@keyframes ui-panel-enter { from { opacity: 0; } to { opacity: 1; } }
+:root :is(.accordion-section-body,.settings-main) { animation: ui-panel-enter var(--ui-panel-motion); }
+:root :is(.studio-modal,.new-project-dialog,.settings-confirm-panel,.quick-search),
+:root .studio-dialog[open] { animation: ui-panel-enter var(--ui-dialog-motion); }
+:root .settings-appearance-preview .settings-preview-toolrail i:first-child { animation: none; }
+:root .settings-appearance-preview[data-motion=full]:hover .settings-preview-toolrail i:first-child {
+  background: var(--ui-hover); border-color: var(--ui-accent-hover); transition: background-color var(--ui-control-motion), border-color var(--ui-control-motion);
+}
+/* Reduced motion allows only short fades. Legacy looping/transform animations
+   are stopped before selectively enabling these surface fades. */
+:root[data-motion=reduced] *, :root[data-motion=reduced] *::before, :root[data-motion=reduced] *::after {
+  animation: none !important;
+  transition-property: opacity !important;
+}
+:root[data-motion=reduced] :is(.accordion-section-body,.settings-main,.studio-modal,.new-project-dialog,.settings-confirm-panel,.quick-search,.studio-overlay,.new-project-backdrop,.settings-confirm-overlay,.home-hub,.ai-dock),
+:root[data-motion=reduced] .studio-dialog[open] { animation: ui-panel-enter 80ms ease-out !important; }
+:root[data-motion=reduced] .ai-dock[data-closing=true] { animation: dock-exit 80ms ease-out forwards !important; }
+:root .settings-appearance-preview[data-motion=reduced] { animation: ui-panel-enter 80ms ease-out; }
+:root .settings-appearance-preview[data-motion=reduced] * { transition-property: opacity; transition-duration: 80ms; }
+:root .settings-appearance-preview[data-motion=off],
+:root .settings-appearance-preview[data-motion=off] * { animation: none; transition: none; }
+/* Accessibility overrides are last so surface polish does not suppress them. */
+@media (prefers-reduced-motion: reduce) {
+  :root :is(button,.icon-hint::after) { transition: none !important; }
+  :root button:not(:disabled):active { transform: none !important; }
+  :root .ai-dock :is(.animate-ping,.animate-pulse,.animate-spin) { animation: none !important; }
+}
+:root[data-motion=off] button { transition: none !important; }
+:root:is([data-motion=reduced],[data-motion=off]) button:not(:disabled):active { transform: none !important; }
+:root[data-motion=off] .ai-dock :is(.animate-ping,.animate-pulse,.animate-spin) { animation: none !important; }
+@media (forced-colors: active) {
+  :root :is(.studio-modal,.studio-dialog,.new-project-dialog,.settings-confirm-panel),
+  :root[data-glass] :is(.studio-modal,.studio-dialog,.new-project-dialog,.settings-confirm-panel),
+  :root :is(.settings-center,.provider-settings,.external-agent-settings,.diagnostic-settings,.model-settings).studio-modal {
+    background: Canvas !important; color: CanvasText; border-color: CanvasText !important; box-shadow: none !important;
+  }
+  :root :is(button,a,input,select,textarea,summary,[tabindex]):focus-visible { outline-color: Highlight !important; }
+  :root :is(.studio-modal,.studio-dialog,.settings-confirm-panel,.new-project-dialog)
+    :is(input:not([type=range]):not([type=color]):not([type=checkbox]):not([type=radio]),select,textarea) {
+    background-color: Field !important; color: FieldText !important; border-color: ButtonText !important;
+  }
+  :root :is(.provider-settings-primary,.settings-save-button,.color-picker-apply,.cutout-apply-button,
+    .ai-send-button,.image-export-footer .primary) { background: Highlight !important; color: HighlightText !important; border-color: Highlight !important; }
+}

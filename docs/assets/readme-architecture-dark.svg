@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="672" viewBox="0 0 800 672" role="img" aria-labelledby="title desc">
+  <title id="title">Lumiseq shared editing architecture</title>
+  <desc id="desc">Workspace operations and AI or MCP canonical tools converge on CommandBus and DocumentManager. Documents feed rendering, assets and project persistence; native services provide RAW decoding, files and secure storage. AI observation and verification reuse document rendering.</desc>
+  <defs><marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1L7 4L1 7" fill="none" stroke="#89979d" stroke-width="1.2"/></marker></defs>
+  <g fill="none" stroke="#89979d" stroke-width="1.5" marker-end="url(#arrow)">
+    <path d="M136 94V132Q136 148 152 148H212Q228 148 228 164V190"/>
+    <path d="M400 94V132Q400 148 416 148H552Q568 148 568 164V190"/>
+    <path d="M664 94V132Q664 148 648 148H584Q568 148 568 164V190"/>
+    <path d="M228 239V259Q228 277 246 277H382Q400 277 400 295V307"/>
+    <path d="M568 239V259Q568 277 550 277H418Q400 277 400 295V307"/>
+    <path d="M400 351V395"/>
+    <path d="M400 439V459Q400 477 382 477H154Q136 477 136 495V511"/>
+    <path d="M400 439V511"/>
+    <path d="M400 439V459Q400 477 418 477H646Q664 477 664 495V511"/>
+  </g>
+  <g font-family="Arial,Helvetica,sans-serif" text-anchor="middle" fill="#e5e7e5" font-size="30">
+    <text x="136" y="52">Workspace</text>
+    <text x="400" y="52">API / Agent</text>
+    <text x="664" y="52">MCP</text>
+    <text x="228" y="224">Operations</text>
+    <text x="568" y="224">Canonical Tools</text>
+    <text x="400" y="340">CommandBus</text>
+    <text x="400" y="428">DocumentManager</text>
+    <text x="136" y="545">Render</text>
+    <text x="400" y="545">Assets</text>
+    <text x="664" y="545">Project</text>
+    <text x="400" y="622">Tauri / Rust</text>
+  </g>
+  <g font-family="Arial,Helvetica,sans-serif" text-anchor="middle" fill="#a7b0b4" font-size="21">
+    <text x="136" y="82">React UI</text>
+    <text x="400" y="82">Runtime + harness</text>
+    <text x="664" y="82">AgentBridge</text>
+    <text x="136" y="575">Preview + export</text>
+    <text x="400" y="575">Source resources</text>
+    <text x="664" y="575">Save + recovery</text>
+    <text x="400" y="654">LibRaw · Filesystem · Secure storage</text>
+  </g>
+  <path d="M64 592H736" stroke="#424a50"/>
+</svg>

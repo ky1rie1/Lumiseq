@@ -1,0 +1,51 @@
+<!doctype html><html lang="zh"><meta charset="utf-8"><title>真实 RAW 细节一致性验证</title>
+<style>body{background:#202126;color:#e8e9ec;font:14px system-ui;padding:24px}pre{white-space:pre-wrap}canvas,img{width:400px;max-width:45vw}figure{display:inline-block;margin:8px}</style>
+<h1>真实 RAW：1:1 预览与全尺寸导出</h1>
+<p>对照生产 WebGL 与原生导出中心区域，排除 64 像素边界。预览为 8 位，导出原图为 16 位；此测试不测量色卡色差。</p>
+<pre id="report">正在验证…</pre><div id="images"></div>
+<script type="module">
+import { WebGLImageEngine } from '/src/engine/WebGLImageEngine.ts';
+import { createDefaultDevelopSettings } from '/src/document/DevelopDocument.ts';
+const root='/generated-test-output/raw-spatial/';
+const report={complete:false,passed:false,cases:[],errors:[]};
+const image=async name=>{const img=new Image();img.src=root+name;await img.decode();return img;};
+try{
+  const sourceReport=await(await fetch(root+'report.json')).json();
+  const auto=await(await fetch(root+'resolved-auto.json')).json();
+  const source=await image('detail-source.png');
+  const engine=new WebGLImageEngine();engine.setLoadedSource('raw-detail',source,source.width,source.height);
+  const names=sourceReport.cases.map(x=>x.name);
+  for(const name of names){
+    const settings=createDefaultDevelopSettings(true);
+    if(name==='texture'||name==='combined')settings.texture=35;
+    if(name==='clarity'||name==='combined')settings.clarity=40;
+    if(name==='dehaze'||name==='combined')settings.dehaze=30;
+    if(name==='sharpen'||name==='combined'){settings.detail.sharpenAmount=45;settings.detail.sharpenRadius=1.7;settings.detail.sharpenThreshold=3;}
+    if(name==='luma'||name==='combined')settings.detail.lumaDenoise=40;
+    if(name==='chroma'||name==='combined')settings.detail.chromaDenoise=45;
+    if(name==='auto')settings.whiteBalance={mode:'auto',resolvedAuto:auto};
+    const canvas=document.createElement('canvas');canvas.width=source.width;canvas.height=source.height;
+    const spatialAnalysis=(settings.dehaze||settings.detail.lumaDenoise||settings.detail.chromaDenoise)?await(await fetch(root+name+'-analysis.json')).json():undefined;
+    await engine.renderDevelop('raw-detail',settings,canvas,undefined,{spatialAnalysis,sourceRect:{...sourceReport.crop,sourceWidth:sourceReport.width,sourceHeight:sourceReport.height}});
+    if(engine.getRenderingStatus().backend!=='webgl2')throw new Error('Expected real WebGL2');
+    const expected=await image(name+'-detail.png');
+    const scratch=document.createElement('canvas');scratch.width=canvas.width;scratch.height=canvas.height;
+    const ctx=scratch.getContext('2d');ctx.drawImage(canvas,0,0);const gpu=ctx.getImageData(0,0,canvas.width,canvas.height).data;
+    ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(expected,0,0);const native=ctx.getImageData(0,0,canvas.width,canvas.height).data;
+    let total=0,max=0,channels=0;const histogram=Array(256).fill(0);
+    for(let y=64;y<canvas.height-64;y++)for(let x=64;x<canvas.width-64;x++)for(let c=0;c<3;c++){
+      const i=(y*canvas.width+x)*4+c,d=Math.abs(gpu[i]-native[i]);total+=d;max=Math.max(max,d);histogram[d]++;channels++;
+    }
+    let sum=0,p95=255;for(let i=0;i<256;i++){sum+=histogram[i];if(sum>=channels*.95){p95=i;break;}}
+    report.cases.push({name,meanError8bit:total/channels,p95Error8bit:p95,maxError8bit:max,passed:total/channels<2&&p95<=5});
+    if(name==='neutral'||name==='combined'||name==='auto'){
+      for(const [label,element]of [[name+' WebGL',canvas],[name+' 原生导出',expected]]){
+        const figure=document.createElement('figure'),caption=document.createElement('figcaption');caption.textContent=label;figure.append(element,caption);document.querySelector('#images').append(figure);
+      }
+    }
+    engine.releaseDevelopContext(canvas);
+  }
+  report.camera=sourceReport.camera;report.sourceSize=[sourceReport.width,sourceReport.height];report.passed=report.cases.every(x=>x.passed);
+}catch(error){report.errors.push(String(error));}
+report.complete=true;document.querySelector('#report').textContent=JSON.stringify(report,null,2);
+</script></html>

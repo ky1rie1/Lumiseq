@@ -1,0 +1,18 @@
+name: Feature request
+description: Propose an editor workflow improvement
+title: "[Feature]: "
+body:
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Workflow and problem
+      description: Describe what you want to accomplish and the current obstacle.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Expected behavior
+      description: Include how the feature should be exposed to AI tools, where relevant.
+    validations:
+      required: true

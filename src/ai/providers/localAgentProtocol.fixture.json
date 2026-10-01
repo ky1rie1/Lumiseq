@@ -1,0 +1,4 @@
+{
+  "raw": {"content":"Inspect","toolCalls":[{"name":"inspect_region","arguments":"{\"documentId\":\"doc1\",\"mode\":\"detail\",\"region\":{\"x\":1,\"y\":2,\"width\":3,\"height\":4}}"}]},
+  "normalized": {"content":"Inspect","toolCalls":[{"name":"inspect_region","arguments":{"documentId":"doc1","mode":"detail","region":{"x":1,"y":2,"width":3,"height":4}}}]}
+}

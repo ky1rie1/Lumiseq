@@ -1,0 +1,23 @@
+name: Bug report
+description: Report a reproducible Lumiseq issue
+title: "[Bug]: "
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Version and environment
+      description: Lumiseq version, Windows version, GPU if relevant
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Include expected and actual results.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Screenshots or sample files
+      description: Share only files you may publish. Remove credentials and private metadata. For RAW or cutout issues, include the original and result when possible.

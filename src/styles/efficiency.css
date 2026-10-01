@@ -1,0 +1,26 @@
+/* Lightweight materials and one motion policy across the workspace. */
+:root { --glass-blur: 6px; --glass-shadow: inset 0 1px #ffffff0a,0 5px 18px #0003; }
+.glass-surface,.glass-panel,.glass-floating { backdrop-filter:blur(var(--glass-blur)) saturate(1.1); -webkit-backdrop-filter:blur(var(--glass-blur)) saturate(1.1); box-shadow:var(--glass-shadow); }
+.glass-surface::before,.glass-surface::after,.glass-floating::before,.glass-floating::after,.glass-panel::before,.glass-panel::after { animation:none; opacity:0; }
+.studio-modal,.studio-dialog,.settings-menu { background:#222830 !important; backdrop-filter:none !important; -webkit-backdrop-filter:none !important; }
+.studio-dialog::backdrop,.studio-overlay,.new-project-backdrop { backdrop-filter:none !important; -webkit-backdrop-filter:none !important; }
+.header-capsule,.workspace-switch { backdrop-filter:none; -webkit-backdrop-filter:none; background:#252d36; }
+.editor-tools,.ai-dock { backdrop-filter:none !important; -webkit-backdrop-filter:none !important; }
+:root[data-glass=reduced] { --glass-blur:4px; }
+:root[data-glass=standard] { --glass-blur:8px; }
+:root[data-glass=off] { --glass-blur:0px; }
+:root[data-glass=off] :is(.header-capsule,.workspace-switch,.editor-tools,.ai-dock) { background:#30343a !important; backdrop-filter:none !important; border-color:#ffffff21 !important; }
+:root[data-glass=reduced] :is(.header-capsule,.workspace-switch,.editor-tools,.ai-dock) { background:#252d36 !important; backdrop-filter:none !important; }
+:root[data-glass=standard] :is(.header-capsule,.workspace-switch,.editor-tools,.ai-dock) { background:#35404ab8 !important; backdrop-filter:blur(12px) saturate(1.15) !important; -webkit-backdrop-filter:blur(12px) saturate(1.15) !important; border-color:#ffffff2a !important; }
+:root[data-density=compact] { --type-control:11px; --type-body:12px; }
+:root[data-density=compact] .settings-row { padding-block:8px; }
+:root[data-density=compact] .settings-sidebar nav button { min-height:32px; padding-block:6px; }
+:root[data-density=compact] .develop-controls-panel .accordion-section-body { padding-block:8px; }
+:root[data-density=compact] .editor-tools button { min-height:30px; padding-block:5px; }
+:root[data-density=compact] :is(.ai-dock-header,.ai-compose-area) { padding:10px; }
+:root[data-density=compact] :is(.develop-operation-bar,.edit-operation-bar,.editor-options) { padding-block:4px; }
+:root[data-motion=reduced] *, :root[data-motion=reduced] *::before, :root[data-motion=reduced] *::after { animation:none !important; transition-property:opacity !important; transition-duration:80ms !important; scroll-behavior:auto !important; }
+:root[data-motion=off] *, :root[data-motion=off] *::before, :root[data-motion=off] *::after { animation:none !important; transition:none !important; scroll-behavior:auto !important; }
+:root[data-motion=off] button:active { transform:none !important; }
+:root[data-page-hidden=true] *, :root[data-page-hidden=true] *::before, :root[data-page-hidden=true] *::after { animation-play-state:paused !important; }
+@media(prefers-reduced-transparency:reduce) { .glass-surface,.glass-panel,.glass-floating { backdrop-filter:none !important; -webkit-backdrop-filter:none !important; background:#272d35; } }

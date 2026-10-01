@@ -1,0 +1,87 @@
+/* Cutout shares the editor's typography and restrained blue accent. */
+dialog.studio-dialog:has(.cutout-shell) {
+  width: min(1280px, calc(100vw - 48px)); max-width: none;
+  height: min(800px, calc(100dvh - 48px)); max-height: calc(100dvh - 48px);
+  overflow: hidden; border: 1px solid #9baec43d; border-radius: 14px;
+  color: #dce5ee; box-shadow: 0 24px 80px #080d147a;
+}
+dialog.studio-dialog[open]:has(.cutout-shell) { display: flex; flex-direction: column; }
+dialog:has(.cutout-shell) .dialog-heading { flex: none; min-height: 54px; padding: 12px 20px; border-bottom: 1px solid #a4b8cc22; }
+dialog:has(.cutout-shell) .dialog-heading h2 { font-size: 14px; font-weight: 600; }
+.cutout-shell { flex: 1; min-height: 0; display: flex; flex-direction: column; font-size: 12px; font-variant-numeric: tabular-nums; }
+.cutout-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 280px; }
+.cutout-visual { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: #181d23; }
+.cutout-view-controls { flex: none; min-height: 56px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; padding: 12px 18px; border-bottom: 1px solid #a4b8cc17; }
+.cutout-segmented { display: flex; padding: 3px; gap: 2px; border-radius: 7px; background: #10161c; border: 1px solid #a4b8cc1f; }
+.cutout-segmented button { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 28px; padding: 0 12px; border: 1px solid transparent; border-radius: 4px; color: #98a7b7; font-size: 11px; }
+.cutout-segmented button:hover:not(:disabled) { color: #ecf2f8; background: #a4b8cc12; }
+.cutout-segmented button[aria-pressed=true] { color: #e4effb; background: #a0c1e224; border-color: #a4c4e33b; }
+.cutout-preview-options { display: flex; align-items: center; gap: 14px; }
+.cutout-backgrounds { display: flex; align-items: center; gap: 3px; }
+.cutout-backgrounds button { width: 26px; height: 26px; padding: 4px; border-radius: 5px; border: 1px solid transparent; }
+.cutout-backgrounds button[aria-pressed=true] { border-color: #a7c7e8; background: #a0c1e215; }
+.cutout-backgrounds button:hover { background: #a4b8cc18; }
+.cutout-backgrounds span { display: block; width: 16px; height: 16px; border: 1px solid #ffffff38; border-radius: 2px; }
+.cutout-backgrounds .is-checker { background: repeating-conic-gradient(#abb2b9 0 25%, #606871 0 50%) 0 0 / 8px 8px; }
+.cutout-preview-options select { width: 96px; min-height: 29px; padding: 0 7px; background: #242c35; border: 1px solid #a4b8cc30; border-radius: 5px; color: #c8d5e2; font-size: 11px; }
+.cutout-preview { position: relative; flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; background: #161b21; }
+.cutout-preview-content { display: grid; place-items: center; min-width: 100%; min-height: 100%; }
+.cutout-image { position: relative; flex: none; box-shadow: 0 4px 22px #070d1659; }
+.cutout-image canvas { display: block; max-width: none; touch-action: none; }
+.cutout-image canvas.is-inspecting { cursor: grab; }
+.cutout-image canvas.is-inspecting:active { cursor: grabbing; }
+.cutout-image canvas.is-painting { cursor: crosshair; }
+.cutout-brush-cursor { position: absolute; left: 0; top: 0; pointer-events: none; border: 1px solid #edf6ff; border-radius: 50%; box-shadow: 0 0 0 1px #142b40; }
+.cutout-brush-cursor.is-remove { border-color: #ffcabf; box-shadow: 0 0 0 1px #482820; }
+.cutout-brush-cursor[hidden] { display: none; }
+.cutout-loading { position: absolute; inset: 0; display: grid; place-items: center; color: #9eb0c2; background: #161b21; }
+.cutout-preview-caption { display: flex; flex: none; justify-content: space-between; gap: 12px; padding: 10px 18px; color: #8b9bad; font-size: 10px; border-top: 1px solid #a4b8cc17; }
+.cutout-preview-caption span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cutout-preview-caption span:last-child { flex: none; }
+.cutout-controls { min-height: 0; overflow-y: auto; border-left: 1px solid #a4b8cc22; padding: 20px; background: #222830; }
+.cutout-control-section + .cutout-control-section { border-top: 1px solid #a4b8cc22; padding-top: 20px; margin-top: 20px; }
+.cutout-section-heading { min-height: 22px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.cutout-section-heading h3 { margin: 0; color: #e6edf5; font-size: 12px; font-weight: 600; }
+.cutout-section-heading > span { color: #8194a8; font-size: 10px; }
+.cutout-brush-modes button { flex: 1; padding: 0 7px; min-height: 33px; }
+.cutout-tool-hint { margin: 10px 0 17px; min-height: 32px; line-height: 1.6; color: #8fa1b4; font-size: 11px; }
+.cutout-slider { display: grid; grid-template-columns: 1fr auto; gap: 11px 8px; margin: 0 0 18px; color: #b7c6d6; font-size: 11px; }
+.cutout-slider output { color: #e0e9f2; font-size: 11px; }
+.cutout-slider output small { color: #8598ac; font-size: 10px; }
+.cutout-slider input[type=range] { grid-column: 1 / -1; width: 100%; margin: 0; accent-color: #afc9e4; }
+.cutout-section-note { margin: 0; color: #8598ac; font-size: 10px; line-height: 1.7; }
+.cutout-quiet-button { display: inline-flex; align-items: center; justify-content: flex-start; gap: 7px; padding: 7px 0; color: #aabbd0; font-size: 11px; text-align: left; }
+.cutout-quiet-button:hover:not(:disabled) { color: #e4effb; }
+.cutout-icon-button { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 4px; color: #96a9bd; }
+.cutout-icon-button:hover { background: #a4b8cc18; }
+.cutout-secondary-actions { display: flex; flex-direction: column; align-items: flex-start; padding-top: 14px; margin-top: 20px; border-top: 1px solid #a4b8cc22; }
+.cutout-footer { display: flex; flex: none; align-items: center; justify-content: space-between; gap: 20px; min-height: 72px; padding: 13px 20px; border-top: 1px solid #a4b8cc2a; background: #252d36; }
+.cutout-feedback { min-width: 0; }
+.cutout-feedback p { display: flex; align-items: center; gap: 8px; margin: 0; color: #c5d4e3; font-size: 11px; line-height: 1.5; }
+.cutout-feedback small { display: block; margin-top: 4px; color: #8498ac; font-size: 10px; }
+.cutout-state-dot { width: 5px; height: 5px; flex: none; border-radius: 50%; background: #a9c9e8; }
+.cutout-state-dot.is-busy { animation: cutout-pulse 1.3s ease-in-out infinite; }
+@keyframes cutout-pulse { 50% { opacity: .35; } }
+.cutout-feedback p.cutout-error { display: block; color: #f0b8ad; max-height: 60px; overflow-y: auto; }
+.cutout-footer-actions { display: flex; flex: none; align-items: center; gap: 9px; }
+.cutout-button, .cutout-apply-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 34px; padding: 0 16px; border-radius: 6px; border: 1px solid #a4b8cc35; color: #c8d7e5; font-size: 12px; }
+.cutout-button:hover { background: #a4b8cc16; }
+.cutout-apply-button { background: #bdd4eb; border-color: #bdd4eb; color: #172b3e; font-weight: 600; }
+.cutout-apply-button:hover:not(:disabled) { background: #d0e3f6; border-color: #d0e3f6; }
+@media (max-width: 1000px) {
+  .cutout-layout { grid-template-columns: minmax(0, 1fr) 250px; }
+  .cutout-controls { padding: 16px; }
+  .cutout-view-controls { padding: 10px 12px; }
+  .cutout-preview-options { gap: 8px; }
+}
+@media (max-width: 720px) {
+  dialog.studio-dialog:has(.cutout-shell) { width: calc(100vw - 24px); height: calc(100dvh - 24px); max-height: calc(100dvh - 24px); }
+  .cutout-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(180px, 1fr) auto; }
+  .cutout-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; max-height: 240px; border-left: 0; border-top: 1px solid #a4b8cc22; }
+  .cutout-control-section + .cutout-control-section { margin: 0; padding: 0; border: 0; }
+  .cutout-secondary-actions { grid-column: 1 / -1; margin: 0; }
+  .cutout-footer { padding: 12px; gap: 12px; }
+  .cutout-footer-actions { gap: 6px; }
+  .cutout-button, .cutout-apply-button { padding: 0 10px; }
+}
+@media (prefers-reduced-motion: reduce) { .cutout-state-dot.is-busy { animation: none; } }

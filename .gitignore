@@ -1,0 +1,97 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Vite / Frontend Build Outputs & Cache
+dist/
+dist-ssr/
+*.tsbuildinfo
+coverage/
+.vite/
+*.local
+
+# Tauri & Rust Build Outputs & Intermediates
+src-tauri/target/
+src-tauri/gen/schemas/
+target/
+build-cache/
+src-tauri/native/libraw/bin/
+src-tauri/native/libraw/object/
+
+# Runtime caches, outputs & optional models (moved to %LOCALAPPDATA%)
+runtime-cache/
+generated-test-output/
+artifacts/verification/
+artifacts/*
+!artifacts/README.md
+artifacts/windows/*.exe
+artifacts/windows/builds.json
+artifacts/windows/SHA256SUMS.txt
+artifacts/windows/THIRD_PARTY_NOTICES.txt
+models/
+*.onnx
+*.pth
+*.pt
+*.safetensors
+
+# Local environment & secrets (Never commit secrets or API keys)
+.env*
+!.env.example
+
+# Compiled Binary & Temporary Objects
+*.pdb
+*.ilk
+*.obj
+*.o
+*.tmp
+*.log
+src-tauri/bin/*.exe
+
+# OS Generated Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE & Editor Settings
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Explicit inclusions (never ignore these essential assets/libs)
+!Cargo.lock
+!package-lock.json
+!src-tauri/native/libraw/lib/libraw.a
+reference-source/
+.superpowers/
+
+# Local agent work, acceptance records, and session data
+docs/verification/
+docs/superpowers/
+docs/technical/*_DESIGN.md
+.codex/
+.claude/
+.agents/
+.gemini/
+.antigravity/
+.cache/
+.history/
+logs/
+sessions/
+transcripts/
+recordings/
+*.jsonl
+*.sqlite
+*.sqlite3

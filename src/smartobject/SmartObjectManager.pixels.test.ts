@@ -1,0 +1,100 @@
+import { afterEach, expect, it, vi } from 'vitest';
+import { defaultAssetManager } from '../assets/AssetManager';
+import { createEditDocument, createGroupLayer, createImageLayer, createSmartObjectLayer, createTextLayer } from '../document/EditDocument';
+import { DocumentManager } from '../document/DocumentManager';
+import { WebGLImageEngine } from '../engine/WebGLImageEngine';
+import { installPixelCanvas, pixelBytes } from '../engine/editPixelTestCanvas';
+import { createSmartFilter } from '../filters/smartFilters';
+import { CommandBus } from '../history/CommandBus';
+import { ProjectSerializer } from '../project/ProjectSerializer';
+import { ConvertToSmartObjectCommand, RasterizeSmartObjectCommand } from './SmartObjectManager';
+
+afterEach(() => vi.unstubAllGlobals());
+it.each([createTextLayer({ text: 'Keep me' }), createGroupLayer({ children: [createTextLayer({ text: 'Child' })] })])('rejects $type conversion before it can remove the source content', (layer) => {
+  const manager = new DocumentManager();
+  const document = createEditDocument({ layers: [layer] }); manager.openDocument(document);
+  expect(() => new ConvertToSmartObjectCommand(document.id, layer.id, manager)).toThrow(/support|raster|图像/i);
+  expect(manager.getEditDocument(document.id)!.layers[0]).toEqual(layer);
+});
+it('preserves supported conversion transforms and base layer appearance', () => {
+  const manager = new DocumentManager(); const layer = createImageLayer({ name: 'Image', sourceAssetId: 'asset', naturalWidth: 3, naturalHeight: 2 });
+  layer.visible = false; layer.blendMode = 'multiply'; layer.transform.rotation = 45; layer.transform.scaleX = -2;
+  layer.mask = { id: 'mask', assetId: 'mask-asset', enabled: true, linked: false, density: 1, feather: 0 };
+  const document = createEditDocument({ layers: [layer] }); manager.openDocument(document);
+  new ConvertToSmartObjectCommand(document.id, layer.id, manager).execute();
+  expect(manager.getEditDocument(document.id)!.layers[0]).toMatchObject({ visible: false, blendMode: 'multiply', transform: layer.transform, mask: layer.mask });
+});
+it('bakes filter pixels once and retains appearance and assets through undo/redo', async () => {
+  const create = installPixelCanvas(); const source = create(3, 1); const ctx = source.getContext('2d')!;
+  const pixels = ctx.createImageData(3, 1); pixels.data.set([0,0,0,0,0,0,255,255,0,0,0,0]); ctx.putImageData(pixels, 0, 0);
+  const blob = await new Promise<Blob>((resolve) => source.toBlob((value) => resolve(value!)));
+  const asset = await defaultAssetManager.registerBlob(blob, 'image', 'original', { width: 3, height: 1 });
+  const layer = createSmartObjectLayer({ sourceAssetId: asset.id, originalWidth: 3, originalHeight: 1, x: 1, y: 1 });
+  layer.smartFilters = [createSmartFilter('gaussian_blur', { opacity: 0.5, settings: { radius: 1 } })];
+  layer.transform.rotation = 90; layer.opacity = 0.7; layer.blendMode = 'screen';
+  const mask = await defaultAssetManager.registerMask(new Uint8ClampedArray(25).fill(255), 5, 5);
+  layer.mask = { id: 'mask', assetId: mask.id, enabled: true, linked: false, density: 0.8, feather: 0 };
+  const manager = new DocumentManager(); const document = createEditDocument({ width: 5, height: 5, layers: [layer], backgroundColor: 'transparent' });
+  manager.openDocument(document); const bus = new CommandBus(manager); const engine = new WebGLImageEngine();
+  const before = create(5, 5); await engine.renderEdit(document, before);
+  await bus.execute(new RasterizeSmartObjectCommand(document.id, layer.id, manager));
+  const rasterized = manager.getEditDocument(document.id)!; const raster = rasterized.layers[0];
+  expect(raster).toMatchObject({ type: 'paint', transform: layer.transform, mask: layer.mask, opacity: 0.7, blendMode: 'screen' });
+  if (raster.type !== 'paint') throw new Error('Expected raster layer');
+  expect(raster.rasterAssetId).not.toBe(asset.id); expect(defaultAssetManager.hasAsset(raster.rasterAssetId)).toBe(true);
+  const bakedImage = await createImageBitmap((await defaultAssetManager.getBlob(raster.rasterAssetId))!);
+  const bakedCanvas = create(3, 1); bakedCanvas.getContext('2d')!.drawImage(bakedImage, 0, 0);
+  expect(pixelBytes(bakedCanvas)).toEqual([0,0,255,64,0,0,255,170,0,0,255,64]);
+  const after = create(5, 5); await engine.renderEdit(rasterized, after); expect(pixelBytes(after)).toEqual(pixelBytes(before));
+  const serializer = new ProjectSerializer();
+  const reopened = await serializer.hydrate(await serializer.serialize(rasterized, defaultAssetManager), defaultAssetManager);
+  const reopenedCanvas = create(5, 5); await engine.renderEdit(reopened, reopenedCanvas);
+  expect(pixelBytes(reopenedCanvas)).toEqual(pixelBytes(before));
+  bus.undo(); expect(manager.getEditDocument(document.id)!.layers[0]).toEqual(layer); expect(defaultAssetManager.hasAsset(asset.id)).toBe(true);
+  bus.redo(); expect(manager.getEditDocument(document.id)!.layers[0]).toEqual(raster);
+  expect(defaultAssetManager.hasAsset(raster.rasterAssetId)).toBe(true);
+});
+it('keeps the document and history unchanged when the source cannot be loaded', async () => {
+  installPixelCanvas(); const manager = new DocumentManager();
+  const layer = createSmartObjectLayer({ sourceAssetId: 'missing-raster-source' });
+  const document = createEditDocument({ layers: [layer] }); manager.openDocument(document);
+  const bus = new CommandBus(manager); const assetsBefore = defaultAssetManager.listAssets().length;
+  await expect(bus.execute(new RasterizeSmartObjectCommand(document.id, layer.id, manager))).rejects.toThrow(/unavailable/i);
+  expect(manager.getEditDocument(document.id)).toEqual(document);
+  expect(bus.canUndo()).toBe(false); expect(defaultAssetManager.listAssets()).toHaveLength(assetsBefore);
+});
+it('discards the baked asset when an edit intervenes during encoding', async () => {
+  const create = installPixelCanvas(); const source = create(1, 1);
+  const sourceBlob = await new Promise<Blob>((resolve) => source.toBlob(value => resolve(value!)));
+  const asset = await defaultAssetManager.registerBlob(sourceBlob, 'image', 'source', { width: 1, height: 1 });
+  const layer = createSmartObjectLayer({ sourceAssetId: asset.id, originalWidth: 1, originalHeight: 1 });
+  const manager = new DocumentManager(); const document = createEditDocument({ layers: [layer] }); manager.openDocument(document);
+  let finishEncoding: () => void = () => { throw new Error('Encoding has not started'); };
+  let encodingStarted!: () => void; const started = new Promise<void>(resolve => { encodingStarted = resolve; });
+  vi.stubGlobal('window', { document: { createElement: () => {
+    const canvas = create(); canvas.toBlob = (done) => { finishEncoding = () => done(sourceBlob); encodingStarted(); };
+    return canvas;
+  } } });
+  const bus = new CommandBus(manager); const beforeAssets = defaultAssetManager.listAssets().length;
+  const result = bus.execute(new RasterizeSmartObjectCommand(document.id, layer.id, manager)) as Promise<void>;
+  await started;
+  const edited = { ...layer, opacity: 0.3 };
+  manager.updateDocument({ ...document, layers: [edited] }, 'intervening edit');
+  const rejected = expect(result).rejects.toThrow(/changed/i); finishEncoding(); await rejected;
+  expect(manager.getEditDocument(document.id)!.layers[0]).toEqual(edited);
+  expect(defaultAssetManager.listAssets()).toHaveLength(beforeAssets); expect(bus.canUndo()).toBe(false);
+});
+it('keeps the Smart Object intact when PNG encoding fails', async () => {
+  const create = installPixelCanvas(); const source = create(1, 1);
+  const sourceBlob = await new Promise<Blob>((resolve) => source.toBlob(value => resolve(value!)));
+  const asset = await defaultAssetManager.registerBlob(sourceBlob, 'image', 'source', { width: 1, height: 1 });
+  vi.stubGlobal('window', { document: { createElement: () => {
+    const canvas = create(); canvas.toBlob = (done) => done(null); return canvas;
+  } } });
+  const layer = createSmartObjectLayer({ sourceAssetId: asset.id, originalWidth: 1, originalHeight: 1 });
+  const document = createEditDocument({ layers: [layer] }); const manager = new DocumentManager(); manager.openDocument(document);
+  const bus = new CommandBus(manager); const assetsBefore = defaultAssetManager.listAssets().length;
+  await expect(bus.execute(new RasterizeSmartObjectCommand(document.id, layer.id, manager))).rejects.toThrow(/failed/i);
+  expect(manager.getEditDocument(document.id)!.layers[0]).toEqual(layer);
+  expect(bus.canUndo()).toBe(false); expect(defaultAssetManager.listAssets()).toHaveLength(assetsBefore);
+});

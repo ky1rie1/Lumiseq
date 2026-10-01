@@ -1,0 +1,37 @@
+[package]
+default-run = "lumiseq"
+name = "lumiseq"
+version = "0.9.5"
+description = "Lumiseq (影序) — Image editing and photography"
+authors = ["AI Creative Studio Team"]
+edition = "2021"
+
+[lib]
+name = "lumiseq_lib"
+crate-type = ["staticlib", "rlib"]
+
+[[bin]]
+name = "lumiseq"
+path = "src/main.rs"
+
+[[bin]]
+name = "spatial-quality-probe"
+path = "src/bin/spatial_quality_probe.rs"
+required-features = ["quality-probe"]
+
+[features]
+quality-probe = []
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-fs = "2"
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+image = { version = "0.25.10", default-features = false, features = ["jpeg", "png"] }
+png = "0.18.1"
+kamadak-exif = "0.6.1"
+arboard = "3.4"

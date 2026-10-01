@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh"><meta charset="utf-8"><title>RAW 空间滤镜验证</title>
+<style>body{background:#202126;color:#e8e9ec;font:14px system-ui;padding:24px}pre{white-space:pre-wrap}canvas{max-width:45vw;image-rendering:pixelated}</style>
+<h1>RAW 空间滤镜真实 WebGL 验证</h1>
+<p>生产 GLSL、CPU 参考与原生手算基准；不代表真实相机 RAW 或色卡验收。</p>
+<pre id="report">正在验证…</pre><canvas id="surface"></canvas>
+<script type="module">
+import { SPATIAL_VERTEX_SHADER, SPATIAL_FRAGMENT_SHADER } from '/src/engine/shaders/passSpatialFilter.ts';
+import { createDefaultDevelopSettings } from '/src/document/DevelopDocument.ts';
+import { applySpatialPixel } from '/src/engine/developSpatialMath.ts';
+import { BASE_TONE_VERTEX_SHADER, BASE_TONE_FRAGMENT_SHADER } from '/src/engine/shaders/passBaseTone.ts';
+import { linearToSrgb, applyRelativeWhiteBalance } from '/src/engine/developColorMath.ts';
+
+const report = { complete: false, passed: false, cases: [], errors: [] };
+const canvas = document.querySelector('#surface');
+try {
+  const gl = canvas.getContext('webgl2', {preserveDrawingBuffer:true});
+  if (!gl || !gl.getExtension('EXT_color_buffer_float')) throw new Error('WebGL2 float framebuffer unavailable');
+  report.renderer = gl.getParameter(gl.RENDERER);
+  const compile = (type, source) => {
+    const shader = gl.createShader(type); gl.shaderSource(shader,source); gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader,gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(shader));
+    return shader;
+  };
+  const program = gl.createProgram();
+  gl.attachShader(program,compile(gl.VERTEX_SHADER,SPATIAL_VERTEX_SHADER));
+  gl.attachShader(program,compile(gl.FRAGMENT_SHADER,SPATIAL_FRAGMENT_SHADER));gl.linkProgram(program);
+  if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(program));
+  gl.useProgram(program);
+  const buffer = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,buffer);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,0,0,1,-1,1,0,-1,1,0,1,1,1,1,1]),gl.STATIC_DRAW);
+  for (const [name,offset] of [['a_position',0],['a_texCoord',8]]) {
+    const location=gl.getAttribLocation(program,name);gl.enableVertexAttribArray(location);gl.vertexAttribPointer(location,2,gl.FLOAT,false,16,offset);
+  }
+  const run = (name,width,height,pixels,settings,scale=1,golden=null) => {
+    canvas.width=width;canvas.height=height;
+    const texture = gl.createTexture();gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,texture);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    const rgba=new Float32Array(width*height*4);
+    for(let i=0;i<width*height;i++){rgba.set(pixels.slice(i*3,i*3+3),i*4);rgba[i*4+3]=1;}
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA16F,width,height,0,gl.RGBA,gl.FLOAT,rgba);
+    const resultTexture=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,resultTexture);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA16F,width,height,0,gl.RGBA,gl.FLOAT,null);
+    const fbo=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,fbo);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,resultTexture,0);
+    if(gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE)throw new Error('Incomplete framebuffer');
+    gl.bindTexture(gl.TEXTURE_2D,texture);
+    gl.uniform1i(gl.getUniformLocation(program,'u_image'),0);gl.uniform2f(gl.getUniformLocation(program,'u_texel_size'),1/width,1/height);
+    const values={u_spatial_scale:scale,u_texture:settings.texture,u_clarity:settings.clarity,u_dehaze:settings.dehaze,
+      u_sharpen_amount:settings.detail.sharpenAmount,u_sharpen_radius:settings.detail.sharpenRadius,u_sharpen_threshold:settings.detail.sharpenThreshold,
+      u_luma_denoise:settings.detail.lumaDenoise,u_chroma_denoise:settings.detail.chromaDenoise};
+    for(const [key,value]of Object.entries(values))gl.uniform1f(gl.getUniformLocation(program,key),value);
+    gl.viewport(0,0,width,height);gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+    const output=new Float32Array(width*height*4);gl.readPixels(0,0,width,height,gl.RGBA,gl.FLOAT,output);
+    if(gl.getError()!==gl.NO_ERROR)throw new Error('WebGL draw/read error');
+    let maxError=0,meanError=0,finite=true;
+    for(let y=0;y<height;y++)for(let x=0;x<width;x++){
+      const expected=applySpatialPixel(pixels,width,height,x,y,settings,scale);
+      for(let c=0;c<3;c++){const actual=output[(y*width+x)*4+c];finite=finite&&Number.isFinite(actual);const difference=Math.abs(actual-expected[c]);maxError=Math.max(maxError,difference);meanError+=difference;}
+    }
+    const goldenError=golden ? Math.abs(output[golden.index*4]-golden.value) : null;
+    report.cases.push({name,width,height,scale,maxError,meanError:meanError/(width*height*3),goldenError,passed:finite&&maxError<.008&&(goldenError===null||goldenError<.002)});
+    gl.deleteTexture(texture);gl.deleteTexture(resultTexture);gl.deleteFramebuffer(fbo);
+  };
+  const edge=Float32Array.from([.25,.25,.25,.25,.25,.25,.7,.7,.7,.7,.7,.7,.7,.7,.7]);
+  const sharpen=createDefaultDevelopSettings(false);sharpen.detail.sharpenAmount=100;
+  run('USM edge: Rust hand-computed .80125',5,1,edge,sharpen,1,{index:2,value:.80125});
+  const width=41,height=31,source=new Float32Array(width*height*3);
+  for(let i=0;i<width*height;i++)source.set([(i*17%97)/200,(i*29%83)/150,.4],i*3);
+  for(const name of ['neutral','texture','clarity','dehaze','negative dehaze','sharpen','luma','chroma','combined']) {
+    const settings=createDefaultDevelopSettings(false);
+    if(name==='texture'||name==='combined')settings.texture=35;
+    if(name==='clarity'||name==='combined')settings.clarity=60;
+    if(name==='dehaze'||name==='combined')settings.dehaze=45;
+    if(name==='negative dehaze')settings.dehaze=-45;
+    if(name==='sharpen'||name==='combined'){settings.detail.sharpenAmount=40;settings.detail.sharpenRadius=1.7;}
+    if(name==='luma'||name==='combined')settings.detail.lumaDenoise=40;
+    if(name==='chroma'||name==='combined')settings.detail.chromaDenoise=65;
+    for(const scale of [1,3.7])run(name,width,height,source,settings,scale);
+  }
+  const baseProgram=gl.createProgram();
+  gl.attachShader(baseProgram,compile(gl.VERTEX_SHADER,BASE_TONE_VERTEX_SHADER));
+  gl.attachShader(baseProgram,compile(gl.FRAGMENT_SHADER,BASE_TONE_FRAGMENT_SHADER));gl.linkProgram(baseProgram);
+  if(!gl.getProgramParameter(baseProgram,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(baseProgram));
+  gl.useProgram(baseProgram);
+  for(const [name,offset]of [['a_position',0],['a_texCoord',8]]){
+    const location=gl.getAttribLocation(baseProgram,name);gl.enableVertexAttribArray(location);gl.vertexAttribPointer(location,2,gl.FLOAT,false,16,offset);
+  }
+  for(const [name,matrix]of [['resolved auto WB',[.2/.24,0,0,0,1,0,0,0,.2/.17]],['auto as-shot fallback',[1,0,0,0,1,0,0,0,1]]]){
+    canvas.width=1;canvas.height=1;
+    const source=[.24,.2,.17],texture=gl.createTexture(),resultTexture=gl.createTexture(),fbo=gl.createFramebuffer();
+    gl.bindTexture(gl.TEXTURE_2D,texture);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA16F,1,1,0,gl.RGBA,gl.FLOAT,new Float32Array([...source.map(linearToSrgb),1]));
+    gl.bindTexture(gl.TEXTURE_2D,resultTexture);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA16F,1,1,0,gl.RGBA,gl.FLOAT,null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER,fbo);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,resultTexture,0);
+    if(gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE)throw new Error('WB framebuffer incomplete');
+    gl.bindTexture(gl.TEXTURE_2D,texture);gl.uniform1i(gl.getUniformLocation(baseProgram,'u_image'),0);
+    gl.uniform1i(gl.getUniformLocation(baseProgram,'u_wb_mode'),2);gl.uniform1i(gl.getUniformLocation(baseProgram,'u_white_balance_applied'),1);
+    gl.uniform3f(gl.getUniformLocation(baseProgram,'u_camera_wb'),1,1,1);
+    gl.uniformMatrix3fv(gl.getUniformLocation(baseProgram,'u_wb_matrix'),false,new Float32Array([matrix[0],matrix[3],matrix[6],matrix[1],matrix[4],matrix[7],matrix[2],matrix[5],matrix[8]]));
+    gl.viewport(0,0,1,1);gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+    const actual=new Float32Array(4);gl.readPixels(0,0,1,1,gl.RGBA,gl.FLOAT,actual);
+    if(gl.getError()!==gl.NO_ERROR)throw new Error('WB WebGL draw/read error');
+    const expected=applyRelativeWhiteBalance(source,matrix),maxError=Math.max(...expected.map((v,c)=>Math.abs(v-actual[c])));
+    report.cases.push({name,actual:Array.from(actual.slice(0,3)),expected,maxError,passed:maxError<.002});
+    gl.deleteTexture(texture);gl.deleteTexture(resultTexture);gl.deleteFramebuffer(fbo);
+  }
+  report.passed=report.cases.every(item=>item.passed);
+} catch(error) {report.errors.push(String(error));}
+report.complete=true;
+document.querySelector('#report').textContent=JSON.stringify(report,null,2);
+</script></html>

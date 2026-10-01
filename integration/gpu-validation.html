@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh"><meta charset="utf-8"><title>GPU 抠图验证</title>
+<style>body{background:#25262a;color:#eee;font:14px system-ui;padding:24px}button{padding:12px}pre{white-space:pre-wrap}canvas{width:30vw;max-width:512px;background:#444;margin:6px}</style>
+<h1>GPU 与 CPU 真实模型验证</h1><p>复用生产 worker 与内置权重，依次检查 GPU / CPU 性能和蒙版差异。</p>
+<button id="run">开始验证</button><pre id="status">等待执行</pre><div id="images"></div>
+<script type="module">
+import { defaultCutoutModelStore, CUTOUT_MODEL } from '/src/cutout/CutoutModelStore.ts';
+const status = document.querySelector('#status');
+const samples = ['car-1.jpg', 'plants-1.jpg', 'cloth-1.jpg'];
+const report = { complete: false, runs: [], comparison: [], errors: [] };
+window.gpuValidation = report;
+function update(note='') { status.textContent = note + '\n' + JSON.stringify(report, null, 2); }
+function request(worker, message, transfer=[]) {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => { worker.terminate(); reject(new Error('worker timed out after 120 seconds')); }, 120000);
+    worker.onerror = event => { clearTimeout(timeout); reject(new Error(event.message)); };
+    worker.onmessage = event => { clearTimeout(timeout); event.data.kind === 'error' ? reject(new Error(event.data.error)) : resolve(event.data); };
+    worker.postMessage(message, transfer);
+  });
+}
+async function loadSamples() {
+  const items = [];
+  for (const name of samples) {
+    const response = await fetch('/generated-test-output/gpu-validation/' + name);
+    if (!response.ok) throw new Error('Missing local validation sample: '+name);
+    const bitmap = await createImageBitmap(await response.blob());
+    const canvas = document.createElement('canvas'); canvas.width = canvas.height = CUTOUT_MODEL.inputSize;
+    const ctx=canvas.getContext('2d'); ctx.drawImage(bitmap,0,0,canvas.width,canvas.height); bitmap.close();
+    const rgba=ctx.getImageData(0,0,canvas.width,canvas.height).data;
+    items.push({name,rgba});
+  }
+  return items;
+}
+function showMask(alpha, label) {
+  const canvas=document.createElement('canvas'); canvas.width=canvas.height=CUTOUT_MODEL.inputSize; canvas.title=label;
+  const ctx=canvas.getContext('2d'); const pixels=ctx.createImageData(canvas.width,canvas.height);
+  for(let i=0;i<alpha.length;i++){ pixels.data[4*i]=pixels.data[4*i+1]=pixels.data[4*i+2]=alpha[i]; pixels.data[4*i+3]=255; }
+  ctx.putImageData(pixels,0,0); document.querySelector('#images').append(canvas);
+}
+window.runGpuValidation = async function () {
+  document.querySelector('#run').disabled = true;
+  try {
+    const items=await loadSamples(), masks={auto:[],cpu:[]};
+    for(const acceleration of ['auto','cpu']) {
+      update('Loading '+acceleration+'…');
+      const worker=new Worker(new URL('../src/cutout/cutout.worker.ts',import.meta.url),{type:'module'});
+      try {
+        const weights=await defaultCutoutModelStore.load(); const initializationStart=performance.now();
+        const ready=await request(worker,{kind:'initialize',weights,acceleration},[weights.buffer]);
+        const run={acceleration,backend:ready.backend,fallbackReason:ready.fallbackReason,initializationMs:Math.round(performance.now()-initializationStart),samples:[]};
+        report.runs.push(run); update('Inferring '+acceleration+'…');
+        for(const item of items) {
+          const rgba=new Uint8ClampedArray(item.rgba); const start=performance.now();
+          const result=await request(worker,{kind:'infer',rgba:rgba.buffer},[rgba.buffer]);
+          const alpha=new Uint8ClampedArray(result.alpha); masks[acceleration].push(alpha);
+          let background=0,foreground=0,soft=0;
+          for(const value of alpha) { if(value<10)background++; else if(value>245)foreground++; else soft++; }
+          run.samples.push({name:item.name,backend:result.backend,fallbackReason:result.fallbackReason,durationMs:Math.round(performance.now()-start),background,foreground,soft});
+          showMask(alpha,acceleration+' '+item.name); update('Completed '+acceleration+' '+item.name);
+        }
+      } finally { worker.terminate(); }
+    }
+    for(let j=0;j<items.length;j++) {
+      let absolute=0,max=0,over10=0;
+      for(let i=0;i<masks.auto[j].length;i++){const d=Math.abs(masks.auto[j][i]-masks.cpu[j][i]);absolute+=d;max=Math.max(max,d);if(d>10)over10++;}
+      report.comparison.push({name:items[j].name,meanAlphaError:absolute/masks.auto[j].length,maxAlphaError:max,pixelsOver10:over10,percentOver10:over10/masks.auto[j].length*100});
+    }
+  } catch(error) { report.errors.push(String(error)); }
+  finally { report.complete=true; update(); document.querySelector('#run').disabled=false; }
+  return report;
+};
+document.querySelector('#run').onclick=window.runGpuValidation;
+if(new URLSearchParams(location.search).get('auto')==='1') window.runGpuValidation();
+</script></html>

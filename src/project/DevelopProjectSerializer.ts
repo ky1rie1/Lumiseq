@@ -42,6 +42,8 @@ export class DevelopProjectSerializer {
       id: doc.id, kind: 'develop' as const, sourceUri: doc.sourceUri, fileName: doc.fileName,
       fileSizeBytes: doc.fileSizeBytes, width: doc.width, height: doc.height,
       isRaw: doc.isRaw, exif: doc.exif, settings, aiHistory: doc.aiHistory,
+      rawProcessingVersion:doc.isRaw ? (doc.rawProcessingVersion ?? 1) : undefined,
+      rawCorrectionMode:doc.isRaw ? (doc.rawCorrectionMode ?? 'camera') : undefined,
       settingsSnapshots: (doc.settingsSnapshots ?? []).map(snapshot => ({ ...structuredClone(snapshot), settings: { ...structuredClone(snapshot.settings), masks: snapshot.settings.masks.map(mask => ({ ...structuredClone(mask), maskAssetId: '' })) } })),
       updatedAt: doc.updatedAt,
     };
@@ -58,6 +60,9 @@ export class DevelopProjectSerializer {
       throw new Error('不支持的 RAW 项目格式或版本。');
     }
     const source = manifest.document as Partial<DevelopDocument>;
+    if (source.rawProcessingVersion!==undefined && source.rawProcessingVersion!==1 && source.rawProcessingVersion!==2) throw new Error('Unsupported RAW processing version.');
+    if (source.rawCorrectionMode!==undefined && source.rawCorrectionMode!=='camera' && source.rawCorrectionMode!=='uncorrected') throw new Error('Unsupported RAW correction mode.');
+    if (source.rawProcessingVersion!==2 && source.rawCorrectionMode==='uncorrected') throw new Error('Uncorrected inspection requires RAW processing version 2.');
     if (typeof source.id !== 'string' || !source.id || typeof source.fileName !== 'string' || !source.fileName ||
         typeof source.sourceUri !== 'string' || !source.sourceUri || typeof source.isRaw !== 'boolean' ||
         !Number.isFinite(source.width) || (source.width ?? 0) <= 0 || !Number.isFinite(source.height) || (source.height ?? 0) <= 0 ||
@@ -73,6 +78,8 @@ export class DevelopProjectSerializer {
     const restored = createDevelopDocument({ id: source.id, sourceUri: source.sourceUri,
       fileName: source.fileName, fileSizeBytes: source.fileSizeBytes,
       width: source.width, height: source.height, isRaw: source.isRaw,
+      rawProcessingVersion:source.rawProcessingVersion ?? 1,
+      rawCorrectionMode:source.rawCorrectionMode ?? 'camera',
       exif: source.exif, settings: source.settings });
     if (source.settingsSnapshots !== undefined && (!Array.isArray(source.settingsSnapshots) || source.settingsSnapshots.length > 64 || source.settingsSnapshots.some(snapshot => !snapshot || typeof snapshot.id !== 'string' || typeof snapshot.name !== 'string' || !snapshot.settings || !Array.isArray(snapshot.settings.masks) || snapshot.settings.masks.length > MAX_MASKS))) throw new Error('RAW 项目快照已损坏。');
     restored.settingsSnapshots = structuredClone(source.settingsSnapshots ?? []);

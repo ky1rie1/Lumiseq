@@ -10,6 +10,7 @@ import { UpdateDevelopSettingsCommand } from '../commands/develop/UpdateDevelopS
 
 const native = vi.hoisted(() => ({
   getRawMetadata: vi.fn(), extractRawThumbnail: vi.fn(), decodeRawImage: vi.fn(), cancelRawDecode: vi.fn(), releaseRawAsset: vi.fn(),
+  getRawLinearPreview: undefined as undefined | ReturnType<typeof vi.fn>,
 }));
 vi.mock('../platform', () => ({ isTauriEnvironment: () => false, getPlatformBridge: () => native }));
 
@@ -26,12 +27,14 @@ function openRaw() {
   return doc;
 }
 beforeEach(() => {
+  native.getRawLinearPreview=undefined;
   native.getRawMetadata.mockResolvedValue(null);
   native.extractRawThumbnail.mockResolvedValue(null);
   native.cancelRawDecode.mockResolvedValue(undefined);
   native.releaseRawAsset.mockResolvedValue(undefined);
 });
 afterEach(() => {
+  native.getRawLinearPreview=undefined;
   defaultDocumentManager.closeAll();
   defaultCommandBus.clearHistory();
   for (const asset of defaultAssetManager.listAssets()) {
@@ -40,6 +43,30 @@ afterEach(() => {
   }
   vi.restoreAllMocks();
   vi.clearAllMocks();
+});
+
+it('decodes a valid RAW even when no embedded JPEG is available',async()=>{
+  const doc=openRaw();native.extractRawThumbnail.mockRejectedValue(new Error('No JPEG thumbnail'));
+  native.decodeRawImage.mockResolvedValue(result('no-thumbnail-native'));
+  await useDevelopStore.getState().startRawLoadingPipeline(doc.id);
+  expect(native.decodeRawImage).toHaveBeenCalledOnce();
+  expect(native.decodeRawImage.mock.calls[0].slice(2)).toEqual(['High',2,'camera']);
+  expect(defaultDocumentManager.getDevelopDocument(doc.id)?.rawState).toBe('ready');
+});
+
+it('releases both native and browser sources if the document closes during linear-preview IPC',async()=>{
+  const doc=openRaw(),linear=deferred<{width:number;height:number;data:Uint16Array}>();
+  native.decodeRawImage.mockResolvedValue(result('linear-native',true));
+  native.getRawLinearPreview=vi.fn(()=>linear.promise);
+  let assetId='';vi.spyOn(defaultImageEngine,'loadAsset').mockImplementation(async id=>{
+    assetId=id;defaultImageEngine.setLoadedSource(id,{} as HTMLCanvasElement,20,10);return {width:20,height:10};
+  });
+  const loading=useDevelopStore.getState().startRawLoadingPipeline(doc.id);
+  await vi.waitFor(()=>expect(native.getRawLinearPreview).toHaveBeenCalledWith('linear-native'));
+  defaultDocumentManager.closeDocument(doc.id);linear.resolve({width:20,height:10,data:new Uint16Array(800)});
+  await loading;expect(defaultAssetManager.hasAsset(assetId)).toBe(false);
+  expect(defaultImageEngine.getLoadedSourceElement(assetId)).toBeNull();
+  expect(native.releaseRawAsset).toHaveBeenCalledWith('linear-native');
 });
 
 it.each(['add', 'delete'] as const)('preserves snapshot %s during asynchronous RAW decoding', async action => {

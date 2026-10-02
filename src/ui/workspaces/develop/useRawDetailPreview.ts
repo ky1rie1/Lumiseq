@@ -93,6 +93,11 @@ export function useRawDetailPreview(options: RawDetailOptions) {
             try {
               await defaultImageEngine.loadAsset(handle.id, blob);
               if (!isCurrent()) return;
+              if (bridge.getRawLinearTile) {
+                const linear = await bridge.getRawLinearTile(options.nativeAssetId!, read.x, read.y, read.width, read.height);
+                if (!isCurrent()) return;
+                defaultImageEngine.setRawLinearSource(handle.id, linear);
+              }
               if (cachedTile.current) {
                 defaultImageEngine.releaseAsset(cachedTile.current.assetId);
                 defaultAssetManager.releaseAsset(cachedTile.current.assetId);

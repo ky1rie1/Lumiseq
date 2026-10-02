@@ -13,6 +13,7 @@ import { MCPSchemaAdapter, MCPToolDefinition } from './schemaAdapters/MCPSchemaA
 
 import {
   GetDevelopSettingsTool,
+  CreateRawVariantTool,
   GetDevelopParameterSpecsTool,
   SetExposureTool,
   SetContrastTool,
@@ -99,6 +100,7 @@ export class ToolRegistry {
     this.register(new ReadGuideTool(this));
     // Develop tools
     this.register(new GetDevelopSettingsTool());
+    this.register(new CreateRawVariantTool());
     this.register(new GetDevelopParameterSpecsTool());
     this.register(new SetExposureTool());
     this.register(new SetContrastTool());

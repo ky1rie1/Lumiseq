@@ -49,7 +49,7 @@ export class RenderGraph {
 
     this.disposeFBOs();
 
-    if (!gl.getExtension('EXT_color_buffer_float')) throw new Error('Half-float working buffers are unavailable; use CPU rendering.');
+    if (!gl.getExtension('EXT_color_buffer_float') || !gl.getExtension('OES_texture_float_linear')) throw new Error('Float32 working buffers/filtering are unavailable; use CPU rendering.');
     try {
 
     // Allocate FBO A & Texture A
@@ -59,11 +59,13 @@ export class RenderGraph {
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.texA, 0);
     this.checkTarget();
     if (!this.floatVerified) {
-      gl.clearBufferfv(gl.COLOR, 0, new Float32Array([1.25, .125, 2, 1]));
+      const reference=new Float32Array([1.0001234,-.125,.000001,1]);
+      gl.clearBufferfv(gl.COLOR, 0, reference);
       const pixel = new Float32Array(4);
       gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.FLOAT, pixel);
-      if (gl.getError() !== gl.NO_ERROR || pixel.some((value, index) => !Number.isFinite(value) || Math.abs(value - [1.25, .125, 2, 1][index]) > .002)) {
-        throw new Error('Half-float HDR readback verification failed; use CPU rendering.');
+      if (gl.getError() !== gl.NO_ERROR || pixel.some((value, index) => !Number.isFinite(value)
+        || Math.abs(value-reference[index])>Math.max(1e-12,Math.abs(reference[index])*1e-7))) {
+        throw new Error('Float32 HDR readback verification failed; use CPU rendering.');
       }
       this.floatVerified = true;
     }
@@ -85,21 +87,21 @@ export class RenderGraph {
 
   private checkTarget(): void {
     if (this.gl.checkFramebufferStatus(this.gl.FRAMEBUFFER) !== this.gl.FRAMEBUFFER_COMPLETE || this.gl.getError() !== this.gl.NO_ERROR) {
-      throw new Error('Half-float framebuffer is incomplete; use CPU rendering.');
+      throw new Error('Float32 framebuffer is incomplete; use CPU rendering.');
     }
   }
 
   private createFBOTexture(width: number, height: number): WebGLTexture {
     const gl = this.gl;
     const tex = gl.createTexture();
-    if (!tex) throw new Error('Could not allocate half-float working texture.');
+    if (!tex) throw new Error('Could not allocate float32 working texture.');
     gl.bindTexture(gl.TEXTURE_2D, tex);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     // Never silently quantize linear dark tones or clip HDR into RGBA8.
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, width, height, 0, gl.RGBA, gl.HALF_FLOAT, null);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, width, height, 0, gl.RGBA, gl.FLOAT, null);
     return tex;
   }
 

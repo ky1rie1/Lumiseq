@@ -31,8 +31,7 @@ pub fn inspect_file(file_path: &str) -> Result<LocalFileInfo, String> {
         .unwrap_or("")
         .to_lowercase();
 
-    let raw_exts = ["cr2", "cr3", "nef", "arw", "raf", "rw2", "orf", "dng"];
-    let is_raw = raw_exts.contains(&ext.as_str());
+    let is_raw = is_raw_extension(&ext);
 
     Ok(LocalFileInfo {
         file_name,
@@ -41,6 +40,12 @@ pub fn inspect_file(file_path: &str) -> Result<LocalFileInfo, String> {
         modified_at_ms: metadata.modified().ok().and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok()).map(|duration| duration.as_millis() as u64),
         is_raw,
     })
+}
+
+pub fn is_raw_extension(extension: &str) -> bool {
+    static FORMATS: std::sync::OnceLock<std::collections::HashSet<String>> = std::sync::OnceLock::new();
+    FORMATS.get_or_init(|| serde_json::from_str(include_str!("../../../src/config/rawFormats.json"))
+        .expect("Invalid bundled RAW extension catalog")).contains(&extension.to_ascii_lowercase())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -194,6 +199,18 @@ pub fn reveal_path_in_explorer(path: &str) -> Result<(), String> {
 }
 #[cfg(test)]
 mod atomic_tests {
+    #[test]
+    fn native_inspection_recognizes_additional_camera_raw_formats() {
+        let dir = std::env::temp_dir().join(format!("lumiseq-raw-formats-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for name in ["camera.PEF", "camera.3FR", "camera.IIQ", "camera.X3F", "camera.NRW", "camera.SRW"] {
+            let path = dir.join(name);
+            std::fs::write(&path, b"format-routing-fixture").unwrap();
+            assert!(super::inspect_file(path.to_str().unwrap()).unwrap().is_raw, "{name}");
+            std::fs::remove_file(path).unwrap();
+        }
+        std::fs::remove_dir(dir).unwrap();
+    }
     #[cfg(windows)]
     #[test]
     fn locked_destination_preserves_previous_contents_and_cleans_temp() {

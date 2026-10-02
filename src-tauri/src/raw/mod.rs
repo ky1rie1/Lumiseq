@@ -5,6 +5,12 @@ pub mod metadata;
 pub mod thumbnail;
 pub mod decoder;
 pub mod detail;
+mod linear_source;
+mod optics;
+#[cfg(test)]
+mod compatibility_tests;
+#[cfg(test)]
+mod scene_quality_tests;
 pub mod auto_white_balance;
 pub mod develop;
 mod spatial;

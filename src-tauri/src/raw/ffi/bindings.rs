@@ -5,6 +5,15 @@ use std::os::raw::{c_char, c_int};
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
+pub struct LibRawOptics {
+    pub crop: [u32;4],
+    pub distortion: [i16;17],
+    pub aberration: [i16;33],
+    pub shading: [i16;17],
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
 pub struct LibRawMetaResult {
     pub make: [c_char; 64],
     pub model: [c_char; 64],
@@ -25,6 +34,7 @@ pub struct LibRawMetaResult {
     pub thumb_width: u32,
     pub thumb_height: u32,
     pub error_code: c_int,
+    pub optics: LibRawOptics,
 }
 
 #[repr(C)]
@@ -36,6 +46,15 @@ pub struct LibRawDecodedImage {
     pub data_size: usize,
     pub data: *mut u8,
     pub error_code: c_int,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct LibRawSceneCalibration {
+    pub normalization: f32,
+    pub multipliers: [f32; 4],
+    pub matrix: [[f32; 4]; 3],
+    pub optics: LibRawOptics,
 }
 
 #[repr(C)]
@@ -66,4 +85,6 @@ extern "C" {
     ) -> c_int;
 
     pub fn libraw_wrapper_free_image(image: *mut LibRawDecodedImage);
+    pub fn libraw_wrapper_decode_scene(file_path: *const c_char, demosaic_quality: c_int,
+        out_image: *mut LibRawDecodedImage, calibration: *mut LibRawSceneCalibration) -> c_int;
 }

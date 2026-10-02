@@ -3,7 +3,7 @@
 /// Linear to standard sRGB transfer function (IEC 61966-2-1)
 #[inline]
 pub fn linear_to_srgb(c: f32) -> f32 {
-    let clamped = c.max(0.0);
+    let clamped = c;
     if clamped <= 0.0031308 {
         clamped * 12.92
     } else {
@@ -14,7 +14,7 @@ pub fn linear_to_srgb(c: f32) -> f32 {
 /// Standard sRGB to linear transfer function
 #[inline]
 pub fn srgb_to_linear(c: f32) -> f32 {
-    let clamped = c.max(0.0);
+    let clamped = c;
     if clamped <= 0.04045 {
         clamped / 12.92
     } else {

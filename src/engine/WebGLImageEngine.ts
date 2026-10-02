@@ -29,11 +29,13 @@ import { drawTextLayer, textEffectInsets } from './drawTextLayer';
 import { SelectionUtils } from '../selection/SelectionUtils';
 import { normalizeRawSourceRect, type RawSourceRect } from './rawSourceRect';
 import { applySmartFilterStack } from '../filters/smartFilters';
+import { sampleRawLinearPixel, type RawLinearPixels } from '../platform/rawLinearPixels';
 
 interface LoadedImageSource {
   element: HTMLImageElement | ImageBitmap | HTMLCanvasElement;
   width: number;
   height: number;
+  linear?: RawLinearPixels;
 }
 
 interface LoadedDevelopMask {
@@ -61,6 +63,7 @@ export class WebGLImageEngine implements IImageEngine {
   readonly name = 'WebGL 2.0 Real-time Image Engine';
 
   private loadedSources: Map<string, LoadedImageSource> = new Map();
+  private linearUploads = new WeakMap<RawLinearPixels, Float32Array>();
   private smartFilterCache = new Map<string, { signature: string; canvas: HTMLCanvasElement }>();
   private gl: WebGL2RenderingContext | null = null;
   private offscreenCanvas: HTMLCanvasElement | null = null;
@@ -184,6 +187,18 @@ export class WebGLImageEngine implements IImageEngine {
     return item ? item.element : null;
   }
 
+  setRawLinearSource(assetId: string, pixels: RawLinearPixels): void {
+    const source = this.loadedSources.get(assetId);
+    if (!source || pixels.width !== source.width || pixels.height !== source.height
+      || !(pixels.data instanceof Uint16Array || pixels.data instanceof Float32Array) || pixels.data.length !== pixels.width * pixels.height * 4
+      || pixels.width < 1 || pixels.height < 1 || pixels.width > 4096 || pixels.height > 4096
+      || pixels.width * pixels.height > 6_000_000) throw new Error('RAW linear source does not match the loaded preview');
+    if (pixels.data instanceof Float32Array && pixels.data.some((value,index)=>!Number.isFinite(value)
+      || (index%4===3 && (value<0 || value>1)))) throw new Error('Invalid RAW float source');
+    source.linear = pixels;
+    for (const key of this.qualityAnalysis.keys()) if (key.startsWith(`${assetId}:`)) this.qualityAnalysis.delete(key);
+  }
+
   setLoadedSource(assetId: string, element: HTMLImageElement | ImageBitmap | HTMLCanvasElement, width: number, height: number): void {
     for(const key of this.qualityAnalysis.keys())if(key.startsWith(`${assetId}:`))this.qualityAnalysis.delete(key);
     this.loadedSources.set(assetId, { element, width, height });
@@ -199,18 +214,25 @@ export class WebGLImageEngine implements IImageEngine {
     canvas.width=Math.max(1,Math.round(source.width*scale));canvas.height=Math.max(1,Math.round(source.height*scale));
     const context=canvas.getContext('2d',{willReadFrequently:true});if(!context)throw new Error('Spatial analysis canvas unavailable');
     context.drawImage(source.element,0,0,canvas.width,canvas.height);
-    const toBase=(data:Uint8ClampedArray)=>{
+    const toBase=(data:Uint8ClampedArray,width:number,height:number,origin?:{x:number;y:number})=>{
       const out=new Float32Array(data.length/4*3);
-      for(let i=0;i<data.length;i+=4)out.set(applyBaseTone(applyRelativeWhiteBalance(
-        [srgbToLinear(data[i]/255),srgbToLinear(data[i+1]/255),srgbToLinear(data[i+2]/255)],matrix),s),i/4*3);
+      for(let i=0;i<data.length;i+=4){
+        const x=i/4%width,y=Math.floor(i/4/width);
+        const sampled=source.linear ? sampleRawLinearPixel(source.linear,
+          x+(origin?.x??0),y+(origin?.y??0),origin?source.width:width,origin?source.height:height) : null;
+        const rgb:RGB=sampled ? [sampled[0],sampled[1],sampled[2]]
+          : [srgbToLinear(data[i]/255),srgbToLinear(data[i+1]/255),srgbToLinear(data[i+2]/255)];
+        out.set(applyBaseTone(applyRelativeWhiteBalance(rgb,matrix),s),i/4*3);
+      }
       return out;
     };
-    const haze=analyzeHaze(toBase(context.getImageData(0,0,canvas.width,canvas.height).data),canvas.width,canvas.height);
+    const haze=analyzeHaze(toBase(context.getImageData(0,0,canvas.width,canvas.height).data,canvas.width,canvas.height),canvas.width,canvas.height);
     const pw=Math.min(32,source.width),ph=Math.min(32,source.height),estimates:number[][]=[[],[],[]];
     canvas.width=pw;canvas.height=ph;
     for(let row=0;row<7;row++)for(let column=0;column<7;column++){
-      context.clearRect(0,0,pw,ph);context.drawImage(source.element,Math.floor(column*(source.width-pw)/6),Math.floor(row*(source.height-ph)/6),pw,ph,0,0,pw,ph);
-      const sigma=estimateWaveletNoise(toBase(context.getImageData(0,0,pw,ph).data),pw,ph);
+      const origin={x:Math.floor(column*(source.width-pw)/6),y:Math.floor(row*(source.height-ph)/6)};
+      context.clearRect(0,0,pw,ph);context.drawImage(source.element,origin.x,origin.y,pw,ph,0,0,pw,ph);
+      const sigma=estimateWaveletNoise(toBase(context.getImageData(0,0,pw,ph).data,pw,ph,origin),pw,ph);
       for(let c=0;c<3;c++)estimates[c].push(sigma[c]);
     }
     const noise=estimates.map(values=>values.sort((a,b)=>a-b)[24]) as RGB;
@@ -298,7 +320,7 @@ export class WebGLImageEngine implements IImageEngine {
         if (typeof limit === 'number' && (targetCanvas.width > limit || targetCanvas.height > limit)) throw new Error(`Preview exceeds this device's WebGL texture limit (${limit}).`);
         if (gl.isContextLost()) throw new Error('WebGL context was lost.');
         this.renderDevelopWebGL(gl, source.element, settings, masks, targetCanvas.width, targetCanvas.height,
-          options?.sourceRect, options?.spatialSourceSize ?? { width: source.width, height: source.height },spatialAnalysis);
+          options?.sourceRect, options?.spatialSourceSize ?? { width: source.width, height: source.height },spatialAnalysis, source.linear);
         const error = gl.getError();
         if (typeof error === 'number' && error !== gl.NO_ERROR) throw new Error(`WebGL rendering failed (${error}).`);
         if (gl.isContextLost()) throw new Error('WebGL context was lost.');
@@ -325,7 +347,7 @@ export class WebGLImageEngine implements IImageEngine {
       const originalHeight = options?.sourceRect?.sourceHeight ?? options?.spatialSourceSize?.height ?? source.height;
       this.renderDevelop2D(ctx, source.element, settings, targetCanvas.width, targetCanvas.height,
         spatialPreviewPixelScale(originalWidth, originalHeight, targetCanvas.width, targetCanvas.height, options?.sourceRect?.width ?? originalWidth),
-        spatialAnalysis,targetCanvas.width/(options?.sourceRect?.width??originalWidth),options?.sourceRect ? normalizeRawSourceRect(options.sourceRect):[0,0,1,1]);
+        spatialAnalysis,targetCanvas.width/(options?.sourceRect?.width??originalWidth),options?.sourceRect ? normalizeRawSourceRect(options.sourceRect):[0,0,1,1], source.linear);
       this.renderingStatus = { backend: 'canvas2d', fallbackReason: fallbackReason || 'WebGL 2 unavailable; using basic CPU adjustments.' };
     } catch (error) {
       this.renderingStatus = { backend: 'uninitialized', fallbackReason: error instanceof Error ? error.message : String(error) };
@@ -342,7 +364,8 @@ export class WebGLImageEngine implements IImageEngine {
     height: number,
     sourceRect?: RawSourceRect,
     spatialSourceSize?: { width: number; height: number },
-    spatialAnalysis?:RawSpatialAnalysis
+    spatialAnalysis?:RawSpatialAnalysis,
+    linearSource?: RawLinearPixels
   ): void {
     if (!this.renderGraph || this.gl !== gl) {
       this.saveGpuResources();
@@ -379,7 +402,14 @@ export class WebGLImageEngine implements IImageEngine {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 
     try {
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, imageSource);
+      if (linearSource) {
+        let data = this.linearUploads.get(linearSource);
+        if (!data) {
+          data = linearSource.data instanceof Float32Array ? linearSource.data : Float32Array.from(linearSource.data, value => value / 65535);
+          this.linearUploads.set(linearSource, data);
+        }
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, linearSource.width, linearSource.height, 0, gl.RGBA, gl.FLOAT, data);
+      } else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, imageSource);
     } catch (error) {
       throw new Error(`Could not upload develop source image: ${String(error)}`);
     }
@@ -395,7 +425,7 @@ export class WebGLImageEngine implements IImageEngine {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     const curveBuffer = buildDevelopCurveLUT(settings.curves);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, 1024, 1, 0, gl.RGBA, gl.FLOAT, curveBuffer);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, 1024, 1, 0, gl.RGBA, gl.FLOAT, curveBuffer);
 
     // 3. Begin multi-pass pipeline
     this.renderGraph.begin(srcTexture);
@@ -405,6 +435,7 @@ export class WebGLImageEngine implements IImageEngine {
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, readTex);
       gl.uniform1i(gl.getUniformLocation(this.progBaseTone!, 'u_image'), 0);
+      gl.uniform1i(gl.getUniformLocation(this.progBaseTone!, 'u_input_linear'), linearSource ? 1 : 0);
 
       gl.uniform1f(gl.getUniformLocation(this.progBaseTone!, 'u_exposure'), settings.exposure);
       gl.uniform1f(gl.getUniformLocation(this.progBaseTone!, 'u_contrast'), settings.contrast);
@@ -604,7 +635,8 @@ export class WebGLImageEngine implements IImageEngine {
     spatialScale = 1,
     spatialAnalysis?:RawSpatialAnalysis,
     nativePixelScale=1,
-    sourceRect:[number,number,number,number]=[0,0,1,1]
+    sourceRect:[number,number,number,number]=[0,0,1,1],
+    linearSource?: RawLinearPixels
   ): void {
     ctx.clearRect(0, 0, width, height);
 
@@ -621,7 +653,9 @@ export class WebGLImageEngine implements IImageEngine {
       const matrix = relativeWhiteBalanceMatrix(settings.whiteBalance);
       const base = new Float32Array(width * height * 3);
       for (let i = 0; i < data.length; i += 4) {
-        const input = [srgbToLinear(data[i]/255),srgbToLinear(data[i+1]/255),srgbToLinear(data[i+2]/255)] as RGB;
+        const sampled = linearSource ? sampleRawLinearPixel(linearSource, i/4 % width, Math.floor(i/4/width), width, height) : null;
+        const input: RGB = sampled ? [sampled[0],sampled[1],sampled[2]] : [srgbToLinear(data[i]/255),srgbToLinear(data[i+1]/255),srgbToLinear(data[i+2]/255)];
+        if (sampled) data[i+3] = Math.round(sampled[3]*255);
         base.set(applyBaseTone(applyRelativeWhiteBalance(input,matrix),settings), i / 4 * 3);
       }
       const filtered=spatialAnalysis ? waveletDenoise(base,width,height,settings.detail.lumaDenoise,settings.detail.chromaDenoise,

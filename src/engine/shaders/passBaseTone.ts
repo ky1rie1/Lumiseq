@@ -20,6 +20,7 @@ in vec2 v_texCoord;
 out vec4 fragColor;
 
 uniform sampler2D u_image;
+uniform int u_input_linear;           // 1: native RGBA16 working data, 0: display sRGB
 uniform float u_exposure;              // EV: linearRGB * 2^EV
 uniform float u_contrast;              // -100 to +100
 uniform float u_highlights;            // -100 to +100 (soft-knee shoulder)
@@ -40,7 +41,7 @@ vec3 sRGBToLinear(vec3 srgb) {
 void main() {
     // DOM images and ImageBitmap upload top-down; normalize once before FBO passes.
     vec4 tex = texture(u_image, vec2(v_texCoord.x, 1.0 - v_texCoord.y));
-    vec3 linear = sRGBToLinear(tex.rgb);
+    vec3 linear = u_input_linear == 1 ? tex.rgb : sRGBToLinear(tex.rgb);
 
     // 1. RAW White Balance (Guarded against double multiplication)
     if (u_white_balance_applied == 0) {
@@ -50,7 +51,7 @@ void main() {
     if (u_wb_mode == 1 || u_wb_mode == 2) {
         // Custom Kelvin/tint adaptation or persisted postdecode automatic correction
         float beforeY = dot(linear, vec3(0.2126, 0.7152, 0.0722));
-        linear = max(vec3(0.0), u_wb_matrix * linear);
+        linear = u_wb_matrix * linear;
         float afterY = dot(linear, vec3(0.2126, 0.7152, 0.0722));
         if (afterY > 1e-8) linear *= beforeY / afterY;
     }
@@ -92,7 +93,6 @@ void main() {
         }
     }
 
-    // Ensure non-negative output for linear working buffer
-    fragColor = vec4(max(vec3(0.0), linear), tex.a);
+    fragColor = vec4(linear, tex.a);
 }
 `;

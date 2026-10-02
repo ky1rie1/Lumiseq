@@ -1,0 +1,47 @@
+<!doctype html><html lang="zh"><meta charset="utf-8"><title>RAW 暗部精度验收</title>
+<style>body{background:#202126;color:#eee;font:14px system-ui;padding:24px}pre{white-space:pre-wrap}canvas{max-width:400px}</style>
+<h1>RAW 线性输入：曝光与方向验收</h1><pre id="report">正在验证…</pre><div id="images"></div>
+<script type="module">
+import {WebGLImageEngine} from '/src/engine/WebGLImageEngine.ts';
+import {createDefaultDevelopSettings} from '/src/document/DevelopDocument.ts';
+import {decodeRawLinearPixels} from '/src/platform/rawLinearPixels.ts';
+const report={complete:false,passed:false,cases:[],errors:[]};
+const read=canvas=>{const c=document.createElement('canvas');c.width=canvas.width;c.height=canvas.height;const ctx=c.getContext('2d');ctx.drawImage(canvas,0,0);return ctx.getImageData(0,0,c.width,c.height).data;};
+async function check(name,source,linear,exposure){
+ const engine=new WebGLImageEngine();engine.setLoadedSource(name,source,linear.width,linear.height);engine.setRawLinearSource(name,linear);
+ const settings=createDefaultDevelopSettings(true);settings.exposure=exposure;
+ const gpu=document.createElement('canvas'),cpu=document.createElement('canvas');gpu.width=cpu.width=linear.width;gpu.height=cpu.height=linear.height;
+ await engine.renderDevelop(name,settings,gpu);const backend=engine.getRenderingStatus().backend;
+ await engine.renderDevelop(name,settings,cpu,undefined,{forceCPU:true});const a=read(gpu),b=read(cpu);let total=0,max=0,recovered=0;
+ for(let i=0;i<a.length;i+=4){if(a[i]>0&&linear.data[i]>0)recovered++;for(let c=0;c<3;c++){let d=Math.abs(a[i+c]-b[i+c]);total+=d;max=Math.max(max,d);}}
+ const mean=total/(a.length/4*3),passed=backend==='webgl2'&&mean<1&&max<=3;
+ report.cases.push({name,exposure,backend,mean,max,recovered,firstPixels:[...a.slice(0,16)],passed});
+ document.querySelector('#images').append(gpu);engine.releaseDevelopContext(gpu);engine.releaseAsset(name);
+}
+try{
+ const source=document.createElement('canvas');source.width=4;source.height=2;source.getContext('2d').fillRect(0,0,4,2);
+ const values=[0,1,10,19,200,500,1000,2000],data=new Uint16Array(values.flatMap(v=>[v,v,v,65535]));
+ await check('synthetic orientation and shadow',source,{width:4,height:2,data},8);
+ const floatSource=document.createElement('canvas');floatSource.width=2;floatSource.height=1;
+ await check('Float32 signed gamut, highlight headroom and tiny signal',floatSource,
+   {width:2,height:1,data:new Float32Array([1.5,.5,-.125,1,1.0001234,.000001,.25,1])},-1);
+ if(window.__TAURI_INTERNALS__){
+   const {TauriPlatformBridge}=await import('/src/platform/TauriPlatformBridge.ts');const bridge=new TauriPlatformBridge();
+   const overview=await bridge.getRawLinearPreview('quality-raw-linear');
+   const tile=await bridge.getRawLinearTile('quality-raw-linear',1,0,2,1);
+   const passed=overview.width===4&&overview.height===2&&overview.data[4]===1&&tile.width===2&&tile.height===1&&tile.data[0]===1&&tile.data[4]===10;
+   report.cases.push({name:'production binary IPC preview and tile',passed});
+   const scene=await bridge.getRawLinearPreview('quality-raw-float');
+   const detail=await bridge.getRawLinearTile('quality-raw-float',1,0,1,1);
+   report.cases.push({name:'LF32 binary IPC preserves signed gamut and headroom',passed:
+    scene.data instanceof Float32Array&&scene.data[0]===-.125&&scene.data[1]===1.5&&
+    detail.data[0]===Math.fround(1.0001234)&&scene.data[2]===Math.fround(.000001)});
+ }
+ const root='/artifacts/verification/scene-quality/';
+ const response=await fetch(root+'sony-corner.lf32');if(!response.ok)throw Error('Run full-resolution scene quality probe before this page');
+ const linear=decodeRawLinearPixels(await response.arrayBuffer()),image=new Image();image.src=root+'sony-tl-ev0.png';await image.decode();
+ for(const ev of [0,1.7,4])await check('Sony ILCE-6700 corrected original corner',image,linear,ev);
+ report.passed=report.cases.every(c=>c.passed);
+}catch(e){report.errors.push(String(e));}
+report.complete=true;document.querySelector('#report').textContent=JSON.stringify(report,null,2);
+</script></html>

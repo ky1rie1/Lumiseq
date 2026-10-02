@@ -12,6 +12,8 @@
 
 The native LibRaw library in this repository targets the Windows GNU toolchain. Source, headers, notices, and its required static library are retained together.
 
+`scripts/build-libraw.ps1` rebuilds the vendored LibRaw archive with X3F enabled. `scripts/build-gpr.ps1` fetches the pinned official GoPro SDK into an external dependency directory, builds it, and copies only the required public headers and static archive into `src-tauri/native/gpr`. It requires CMake and MinGW. Its legacy DNG threading is disabled and GPR calls are serialized in the wrapper. Licenses accompany both native archives; see [third-party notices](../THIRD_PARTY_NOTICES.md).
+
 ## First run
 
 ```powershell
@@ -39,6 +41,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-cargo.ps1 test
 `npm run dev` serves the desktop UI for inspection. Native dialogs, RAW decoding, DPAPI, file persistence, and clipboard operations require the Tauri host.
 
 Module tests live beside source; broader tests live in `tests/`. Production WebGL and real-file harnesses live in `integration/`. Tests needing credentials or private RAW files are opt-in; see [RAW fixtures](../tests/raw-fixtures/README.md).
+
+Real multi-camera checks and size-bounded sample preparation are documented in [RAW compatibility](RAW_COMPATIBILITY.md). The default download corpus contains passing CC0 samples; opt-in unsupported fixtures intentionally fail the native gate. The [RAW precision page](../integration/raw-linear-precision.html) compares production GPU/CPU shadows and native binary IPC when run through the `raw-precision` quality probe. Private Sony crop fixtures must be generated locally and are never bundled.
 
 ## Release build
 

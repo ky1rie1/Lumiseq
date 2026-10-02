@@ -31,6 +31,8 @@ await append('ONNX Runtime and BiRefNet upstream notices', path.join(root, 'lice
 await append('Noto Sans SC', path.join(root, 'public', 'fonts', 'OFL-NotoSansSC.txt'));
 await append('README lettering / Manrope', path.join(root, 'licenses', 'OFL-Manrope.txt'));
 await append('README lettering / Caveat', path.join(root, 'licenses', 'OFL-Caveat.txt'));
+await append('RAW codecs / GoPro, Adobe DNG, XMP, Expat and Foveon', path.join(root, 'licenses', 'raw-codec-notices.txt'));
+await append('Expat / GoPro SDK XML parser', path.join(root, 'licenses', 'Expat-COPYING.txt'));
 for (const file of ['COPYRIGHT', 'LICENSE.CDDL', 'LICENSE.LGPL']) {
   await append(`LibRaw ${file}`, path.join(root, 'src-tauri', 'native', 'libraw', file));
 }

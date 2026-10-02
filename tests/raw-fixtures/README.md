@@ -21,6 +21,8 @@ The first native run checks eight full-resolution 16-bit PNG outputs and writes 
 
 ## Source Policy
 
+Public model/compression fixtures are described in [RAW compatibility](../../docs/RAW_COMPATIBILITY.md). `camera-corpus.json` stores public metadata and expected decoding status only. `scripts/prepare-raw-corpus.ps1` verifies hashes, stores camera files outside the checkout, and excludes noncommercial research references from automatic downloads.
+
 Large camera RAW files, private photographs, local paths and generated image/report outputs must not enter the public repository. Use local files or public samples with explicit redistribution licenses. Generated outputs stay in ignored directories.
 
 ## Synthetic Fixtures

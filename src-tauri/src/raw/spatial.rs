@@ -155,7 +155,7 @@ pub fn apply(
             }
         }
     }
-    color.map(|v| v.max(0.0))
+    color
 }
 
 #[cfg(test)]

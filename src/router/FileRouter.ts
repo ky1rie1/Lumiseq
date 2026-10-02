@@ -1,9 +1,8 @@
 // src/router/FileRouter.ts
 import { WorkspaceType } from '../types/common';
 
-export const RAW_EXTENSIONS = new Set([
-  'cr2', 'cr3', 'nef', 'arw', 'raf', 'rw2', 'orf', 'dng', 'pef', 'srw', 'raw'
-]);
+import rawFormats from '../config/rawFormats.json';
+export const RAW_EXTENSIONS = new Set(rawFormats);
 
 export const RASTER_EXTENSIONS = new Set([
   'jpg', 'jpeg', 'png', 'webp', 'bmp', 'tiff', 'tif'

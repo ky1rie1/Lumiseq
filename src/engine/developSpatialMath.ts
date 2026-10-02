@@ -45,5 +45,5 @@ export function applySpatialPixel(
     const diff = color.map((v,i) => v - blurred[i]);
     if (Math.hypot(...diff) > detail.sharpenThreshold / 255) color = color.map((v,i) => v + diff[i] * detail.sharpenAmount / 100) as RGB;
   }
-  return color.map(v => Math.max(0,v)) as RGB;
+  return color;
 }

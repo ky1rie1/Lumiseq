@@ -96,6 +96,6 @@ void main() {
         }
     }
 
-    fragColor = vec4(max(vec3(0.0), color), centerTex.a);
+    fragColor = vec4(color, centerTex.a);
 }
 `;

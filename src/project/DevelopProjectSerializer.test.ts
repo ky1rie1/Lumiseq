@@ -5,6 +5,18 @@ import { rasterizeDevelopMask } from '../develop/maskRaster';
 import { DevelopProjectSerializer } from './DevelopProjectSerializer';
 
 describe('RAW develop project', () => {
+  it('persists float uncorrected inspection and rejects unsupported modes', async () => {
+    const serializer = new DevelopProjectSerializer();
+    const assets = new AssetManager();
+    const doc = createDevelopDocument({ sourceUri: 'C:/photos/sample.arw', fileName: 'sample.arw', isRaw: true, rawCorrectionMode: 'uncorrected' });
+    const json = await serializer.serialize(doc, assets);
+    const bridge = { getRawMetadata: async () => ({ width: 800, height: 600 }) } as any;
+    expect((await serializer.hydrate(json, assets, bridge)).rawCorrectionMode).toBe('uncorrected');
+    const invalid = JSON.parse(json); invalid.document.rawCorrectionMode = 'guess';
+    await expect(serializer.hydrate(JSON.stringify(invalid), assets, bridge)).rejects.toThrow(/mode/);
+    invalid.document.rawCorrectionMode = 'uncorrected'; invalid.document.rawProcessingVersion = 1;
+    await expect(serializer.hydrate(JSON.stringify(invalid), assets, bridge)).rejects.toThrow(/version 2/);
+  });
   it('round-trips edits, local masks and AI history while rebuilding transient mask assets', async () => {
     const assets = new AssetManager();
     const doc = createDevelopDocument({ sourceUri: 'C:\\photos\\sample.cr3', fileName: 'sample.cr3', isRaw: true, width: 800, height: 600 });
@@ -28,6 +40,9 @@ describe('RAW develop project', () => {
     expect(reopenedAssets.hasAsset(reopened.settings.masks[0].maskAssetId)).toBe(true);
     expect(reopened.rawState).toBe('unloaded');
     expect(reopened.isDirty).toBe(false);
+    expect(reopened.rawProcessingVersion).toBe(2);
+    const legacy=JSON.parse(json); delete legacy.document.rawProcessingVersion;
+    expect((await serializer.hydrate(JSON.stringify(legacy),new AssetManager(),{getRawMetadata:async()=>({width:800,height:600})} as any)).rawProcessingVersion).toBe(1);
   });
 
   it('rejects a project whose original RAW can no longer be opened', async () => {

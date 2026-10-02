@@ -8,7 +8,7 @@ precision highp float;
 in vec2 v_texCoord; out vec4 outColor;
 uniform sampler2D u_image;`;
 const encode = head+`
-void main(){ vec4 c=texture(u_image,v_texCoord);vec3 q=sqrt(max(c.rgb,vec3(0)));
+void main(){ vec4 c=texture(u_image,v_texCoord);vec3 q=sign(c.rgb)*sqrt(abs(c.rgb));
 outColor=vec4(dot(q,vec3(.25,.5,.25)),q.r-q.g,q.b-q.g,c.a); }`;
 const blur = head+`
 uniform vec2 u_step;
@@ -22,8 +22,8 @@ outColor=vec4(texture(u_accum,v_texCoord).rgb+shrunk,1); }`;
 const decode = head+`
 uniform sampler2D u_accum; uniform sampler2D u_original;
 void main(){vec3 q=texture(u_image,v_texCoord).rgb+texture(u_accum,v_texCoord).rgb;
-float g=q.x-.25*q.y-.25*q.z;vec3 c=max(vec3(0),vec3(g+q.y,g,g+q.z));
-outColor=vec4(c*c,texture(u_original,v_texCoord).a);}`;
+float g=q.x-.25*q.y-.25*q.z;vec3 c=vec3(g+q.y,g,g+q.z);
+outColor=vec4(sign(c)*c*c,texture(u_original,v_texCoord).a);}`;
 const haze = head+`
 uniform sampler2D u_coefficients; uniform vec4 u_source_rect;
 uniform vec3 u_atmosphere; uniform float u_amount;
@@ -74,7 +74,7 @@ export class SpatialQualityPass {
       this.targets.push({texture,fbo});gl.bindTexture(gl.TEXTURE_2D,texture);
       for(const param of [gl.TEXTURE_WRAP_S,gl.TEXTURE_WRAP_T])gl.texParameteri(gl.TEXTURE_2D,param,gl.CLAMP_TO_EDGE);
       for(const param of [gl.TEXTURE_MIN_FILTER,gl.TEXTURE_MAG_FILTER])gl.texParameteri(gl.TEXTURE_2D,param,gl.LINEAR);
-      gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA16F,width,height,0,gl.RGBA,gl.HALF_FLOAT,null);
+      gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA32F,width,height,0,gl.RGBA,gl.FLOAT,null);
       gl.bindFramebuffer(gl.FRAMEBUFFER,fbo);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,texture,0);
       if(gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE)throw new Error('Wavelet floating point target unavailable');
     }this.dimensions=`${width}:${height}`;}catch(error){this.disposeTargets();throw error;}
@@ -120,7 +120,7 @@ export class SpatialQualityPass {
       for(const param of [gl.TEXTURE_MIN_FILTER,gl.TEXTURE_MAG_FILTER])gl.texParameteri(gl.TEXTURE_2D,param,gl.LINEAR);
       const buffer=new Float32Array(profile.width*profile.height*4);
       for(let i=0;i<profile.width*profile.height;i++){buffer[i*4]=profile.coefficients[i*2];buffer[i*4+1]=profile.coefficients[i*2+1];}
-      gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA16F,profile.width,profile.height,0,gl.RGBA,gl.FLOAT,buffer);
+      gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA32F,profile.width,profile.height,0,gl.RGBA,gl.FLOAT,buffer);
       const p=this.programs[4];graph.runPass(p,read=>{
         this.bind(p,'u_image',read,0);this.bind(p,'u_coefficients',texture,3);
         gl.uniform4f(gl.getUniformLocation(p,'u_source_rect'),...rect);

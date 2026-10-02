@@ -15,14 +15,15 @@ function validateShape(pixels: Float32Array, width: number, height: number): voi
 }
 
 function nonnegative(value: number): number { return Number.isFinite(value) ? Math.max(0, value) : 0; }
+function signedSqrt(value:number):number {return Number.isFinite(value)?Math.sign(value)*Math.sqrt(Math.abs(value)):0;}
 function amount(value: number): number { return Math.min(100, nonnegative(value)) / 100; }
 
 function toOpponent(pixels: Float32Array): Float32Array {
   const result = new Float32Array(pixels.length);
   for (let i = 0; i < pixels.length; i += 3) {
-    const r = Math.sqrt(nonnegative(pixels[i]));
-    const g = Math.sqrt(nonnegative(pixels[i + 1]));
-    const b = Math.sqrt(nonnegative(pixels[i + 2]));
+    const r = signedSqrt(pixels[i]);
+    const g = signedSqrt(pixels[i + 1]);
+    const b = signedSqrt(pixels[i + 2]);
     result[i] = .25 * r + .5 * g + .25 * b;
     result[i + 1] = r - g;
     result[i + 2] = b - g;
@@ -109,10 +110,10 @@ export function waveletDenoise(pixels: Float32Array, width: number, height: numb
   for (let i = 0; i < pixels.length; i += 3) {
     const y = retained[i] + current[i], u = retained[i + 1] + current[i + 1], v = retained[i + 2] + current[i + 2];
     const g = y - .25 * u - .25 * v;
-    const r = Math.max(0, g + u), green = Math.max(0, g), b = Math.max(0, g + v);
-    horizontal[i] = Math.min(MAX_FLOAT32, r * r);
-    horizontal[i + 1] = Math.min(MAX_FLOAT32, green * green);
-    horizontal[i + 2] = Math.min(MAX_FLOAT32, b * b);
+    const r = g+u, green = g, b = g+v;
+    horizontal[i] = Math.sign(r)*Math.min(MAX_FLOAT32, r*r);
+    horizontal[i + 1] = Math.sign(green)*Math.min(MAX_FLOAT32, green*green);
+    horizontal[i + 2] = Math.sign(b)*Math.min(MAX_FLOAT32, b*b);
   }
   return horizontal;
 }

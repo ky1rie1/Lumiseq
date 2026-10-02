@@ -46,7 +46,7 @@ void main() {
     if (u_contrast != 0.0 && toneY > 1e-8) adjusted *= (0.18 * pow(toneY / 0.18, pow(2.0, u_contrast / 100.0))) / toneY;
 
     float adjustedLuma = dot(adjusted, vec3(0.2126, 0.7152, 0.0722));
-    adjusted = max(vec3(0.0), mix(vec3(adjustedLuma), adjusted, max(0.0, 1.0 + u_saturation / 100.0)));
+    adjusted = mix(vec3(adjustedLuma), adjusted, max(0.0, 1.0 + u_saturation / 100.0));
     fragColor = vec4(mix(inputColor.rgb, adjusted, weight), inputColor.a);
 }
 `;

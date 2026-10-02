@@ -5,11 +5,15 @@ use std::process::Command;
 fn main() {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let native_lib_dir = PathBuf::from(&manifest_dir).join("native/libraw/lib");
+    let gpr_dir = PathBuf::from(&manifest_dir).join("native/gpr");
     let out_dir = PathBuf::from(env::var_os("OUT_DIR").unwrap());
 
     if native_lib_dir.exists() {
         println!("cargo:rustc-link-search=native={}", out_dir.display());
         println!("cargo:rustc-link-search=native={}", native_lib_dir.display());
+        println!("cargo:rerun-if-changed={}", native_lib_dir.join("libraw.a").display());
+        println!("cargo:rerun-if-changed={}", gpr_dir.display());
+        println!("cargo:rustc-link-search=native={}", gpr_dir.join("lib").display());
         let wrapper_source = PathBuf::from(&manifest_dir).join("src/raw/ffi/libraw_wrapper.cpp");
         let wrapper_header = PathBuf::from(&manifest_dir).join("src/raw/ffi/libraw_wrapper.h");
         let wrapper_object = out_dir.join("libraw_wrapper.o");
@@ -20,6 +24,7 @@ fn main() {
             .arg("-std=c++11")
             .arg("-O2")
             .arg("-I").arg(PathBuf::from(&manifest_dir).join("native/libraw"))
+            .arg("-I").arg(gpr_dir.join("include"))
             .arg("-c").arg(&wrapper_source)
             .arg("-o").arg(&wrapper_object)
             .status().expect("MinGW g++ is required to compile the LibRaw wrapper");
@@ -39,6 +44,7 @@ fn main() {
         println!("cargo:rustc-link-search=native={}", compiler_lib.display());
         println!("cargo:rustc-link-lib=static=raw_wrapper");
         println!("cargo:rustc-link-lib=static=raw");
+        println!("cargo:rustc-link-lib=static=gpr");
         println!("cargo:rustc-link-lib=static=stdc++");
     }
 

@@ -1,5 +1,7 @@
 # Color parity evidence audit for 0.9
 
+> New 2026-10-02 float-pipeline exports were measured against the same frozen references: Outdoor Workshop mean 1.552104, p95 2.585749, maximum 2.764385; Garden Nook mean 1.434303, p95 2.183306, maximum 2.256972. Both had zero clipped patch windows. These small changes are within the prior sampling sensitivity, not evidence of improved physical accuracy. See [current RAW quality](../RAW_QUALITY.md).
+
 Audited 2026-09-29. This audit changes documentation only. Existing application code, exports and benchmark manifests remain unchanged. The second CC0 chart archive was downloaded and measured outside the repository using the existing opt-in native test and color CLI. No software was installed, and no exposure, WB or color correction was fitted to either chart.
 
 ## What the current result establishes

@@ -416,6 +416,9 @@ button:disabled { transform: none !important; }
 :root :is(.image-export-section,.image-export-footer,.image-export-formats button) { border-color: var(--ui-divider); }
 :root .image-export-formats button { color: var(--ui-text); background: var(--ui-base); border-radius: 6px; }
 :root .image-export-formats button[aria-pressed=true] { background: var(--ui-selected); border-color: var(--ui-selected-border); }
+:root .image-export-formats:has(> button:nth-child(3)) {grid-template-columns:repeat(3,minmax(0,1fr));}
+:root .image-export-color select {background:var(--ui-base);color:var(--ui-text);border:1px solid var(--ui-divider);border-radius:4px;padding:6px 9px;margin-top:8px;width:100%;}
+@media(max-width:520px) {:root .image-export-formats:has(> button:nth-child(3)) {grid-template-columns:1fr;}}
 :root :is(.image-export-intro span,.image-export-intro small,.image-export-label,.image-export-note,
   .image-export-formats small,.image-export-color p,.image-export-size) { color: var(--ui-muted); }
 :root .image-export-intro strong { color: var(--ui-text); }

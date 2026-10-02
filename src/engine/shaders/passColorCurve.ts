@@ -68,12 +68,10 @@ float channelWeight(float hueDeg, float centerDeg, float widthDeg) {
 }
 
 vec3 linearToDisplay(vec3 c) {
-    c = max(c, vec3(0.0));
-    return mix(c * 12.92, 1.055 * pow(c, vec3(1.0/2.4)) - 0.055, step(0.0031308,c));
+    return mix(c * 12.92, 1.055 * pow(max(c,vec3(0)), vec3(1.0/2.4)) - 0.055, step(0.0031308,c));
 }
 vec3 displayToLinear(vec3 c) {
-    c = max(c, vec3(0.0));
-    return mix(c / 12.92, pow((c + 0.055)/1.055,vec3(2.4)),step(0.04045,c));
+    return mix(c / 12.92, pow(max((c + 0.055)/1.055,vec3(0)),vec3(2.4)),step(0.04045,c));
 }
 
 void main() {
@@ -85,7 +83,7 @@ void main() {
     if (u_curve_enabled) {
         vec3 display = linearToDisplay(color);
         vec3 uv = (clamp(display,0.0,1.0) * 1023.0 + 0.5) / 1024.0;
-        vec3 mapped = vec3(texture(u_curve_lut,vec2(uv.r,0.5)).r,texture(u_curve_lut,vec2(uv.g,0.5)).g,texture(u_curve_lut,vec2(uv.b,0.5)).b) + max(display - 1.0, vec3(0.0));
+        vec3 mapped = vec3(texture(u_curve_lut,vec2(uv.r,0.5)).r,texture(u_curve_lut,vec2(uv.g,0.5)).g,texture(u_curve_lut,vec2(uv.b,0.5)).b) + max(display - 1.0, vec3(0.0)) + min(display,vec3(0.0));
         color = displayToLinear(mapped);
     }
 
@@ -169,6 +167,6 @@ void main() {
         color = mix(vec3(luma), color, max(0.0, satFactor));
     }
 
-    fragColor = vec4(max(vec3(0.0), color), tex.a);
+    fragColor = vec4(color, tex.a);
 }
 `;

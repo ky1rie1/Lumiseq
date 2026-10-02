@@ -29,7 +29,12 @@ export function createColorPipelineState(params: {
   isSensorLinear?: boolean;
   /** Browser-decoded JPEG/PNG source, including native RAW's encoded preview. */
   isDisplayEncoded?: boolean;
+  isWorkingLinear?: boolean;
 }): ImageColorPipelineState {
+  if (params.isWorkingLinear) {
+    return {colorState:'working-linear',whiteBalanceApplied:true,cameraMatrixApplied:true,
+      toneMappingApplied:false,transferFunctionApplied:false,colorSpace:'linear-srgb'};
+  }
   if (params.isDisplayEncoded && !params.isEmbeddedPreview) {
     return {
       colorState: 'display-encoded', whiteBalanceApplied: true, cameraMatrixApplied: true,

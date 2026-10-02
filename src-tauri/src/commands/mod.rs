@@ -2,7 +2,7 @@
 use crate::core::system::{self, SystemInfo};
 use crate::filesystem::{self, LocalFileInfo};
 use crate::raw::{
-    decode_raw, extract_embedded_thumbnail, read_metadata, DecodeJobTracker, DemosaicQuality,
+    extract_embedded_thumbnail, read_metadata, DecodeJobTracker, DemosaicQuality,
     NativeDevelopSettings, NativeExportOptions, RawDecodeResult, RawMetadata,
 };
 use crate::security;
@@ -58,18 +58,35 @@ pub fn extract_raw_thumbnail(path: String) -> Result<Vec<u8>, String> {
 }
 
 #[tauri::command]
-pub fn decode_raw_image(
+pub async fn decode_raw_image(
     job_id: String,
     path: String,
     quality: Option<DemosaicQuality>,
+    processing_version: Option<u8>,
+    correction_mode: Option<crate::raw::types::RawCorrectionMode>,
 ) -> Result<RawDecodeResult, String> {
     let q = quality.unwrap_or(DemosaicQuality::Balanced);
-    decode_raw(&job_id, &path, q).map_err(|e| e.to_string())
+    tauri::async_runtime::spawn_blocking(move||crate::raw::decoder::decode_raw_with_options(&job_id,&path,q,processing_version.unwrap_or(2),correction_mode.unwrap_or_default()))
+        .await.map_err(|e|e.to_string())?.map_err(|e|e.to_string())
 }
 
 #[tauri::command]
 pub fn get_raw_display_tile(asset_id: String, x: usize, y: usize, width: usize, height: usize) -> Result<Vec<u8>, String> {
     crate::raw::detail::render_raw_display_tile(&asset_id, x, y, width, height).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn get_raw_linear_preview(asset_id: String) -> Result<tauri::ipc::Response, String> {
+    let bytes = tauri::async_runtime::spawn_blocking(move || crate::raw::detail::render_raw_linear_preview(&asset_id))
+        .await.map_err(|e| format!("RAW linear preview worker failed: {e}"))?.map_err(|e| e.to_string())?;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
+#[tauri::command]
+pub async fn get_raw_linear_tile(asset_id: String, x: usize, y: usize, width: usize, height: usize) -> Result<tauri::ipc::Response, String> {
+    let bytes = tauri::async_runtime::spawn_blocking(move || crate::raw::detail::render_raw_linear_tile(&asset_id, x, y, width, height))
+        .await.map_err(|e| format!("RAW linear tile worker failed: {e}"))?.map_err(|e| e.to_string())?;
+    Ok(tauri::ipc::Response::new(bytes))
 }
 
 #[tauri::command]
@@ -159,7 +176,7 @@ pub fn get_mcp_server_status() -> Result<crate::mcp::McpServerStatusDto, String>
 #[tauri::command]
 pub fn stage_recovery_source(file_name: String, bytes: Vec<u8>) -> Result<String, String> {
     let extension = std::path::Path::new(&file_name).extension().and_then(|x| x.to_str()).unwrap_or("raw").to_ascii_lowercase();
-    if !["cr2", "cr3", "nef", "arw", "raf", "rw2", "orf", "dng", "pef", "srw", "raw"].contains(&extension.as_str()) { return Err("Unsupported recovery source extension".into()); }
+    if !filesystem::is_raw_extension(&extension) { return Err("Unsupported recovery source extension".into()); }
     let base = std::env::var_os("LOCALAPPDATA").ok_or("Missing local application data directory")?;
     let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|e| e.to_string())?.as_nanos();
     let path = std::path::PathBuf::from(base).join("AI Creative Studio").join("recovery-sources").join(format!("{}-{}.{}", std::process::id(), stamp, extension));

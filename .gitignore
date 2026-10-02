@@ -37,6 +37,41 @@ artifacts/windows/THIRD_PARTY_NOTICES.txt
 *.pt
 *.safetensors
 
+# Camera originals belong outside source Git; keep only the synthetic router fixture.
+*.cr2
+*.cr3
+*.crw
+*.nef
+*.nrw
+*.arw
+*.sr2
+*.srf
+*.raf
+*.rw2
+*.rwl
+*.rwz
+*.orf
+*.dng
+*.pef
+*.ptx
+*.srw
+*.raw
+*.3fr
+*.fff
+*.iiq
+*.mos
+*.x3f
+*.mrw
+*.kdc
+*.dcr
+*.erf
+*.gpr
+*.mef
+*.cap
+*.bay
+*.sti
+!tests/fixtures/sample.dng
+
 # Local environment & secrets (Never commit secrets or API keys)
 .env*
 !.env.example

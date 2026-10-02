@@ -92,6 +92,8 @@ pub fn read_metadata_exif_base(file_path: &str) -> Result<RawMetadata, RawError>
     }
 
     Ok(RawMetadata {
+        processing_version:1,
+        optical_correction:None,
         camera_make,
         camera_model,
         lens_model,

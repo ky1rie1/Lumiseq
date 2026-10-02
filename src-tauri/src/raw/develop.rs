@@ -89,7 +89,9 @@ pub struct NativeDevelopMask {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NativeExportOptions {
-    pub format: String,       // "jpeg", "png"
+    #[serde(default)]
+    pub output_profile: super::output_profile::OutputProfile,
+    pub format: String,       // jpeg, png, tiff; tiff-f32 for linear diagnostic output
     pub quality: Option<f32>, // 0.0 - 1.0
     pub width: Option<u32>,
     pub height: Option<u32>,
@@ -171,7 +173,7 @@ pub(super) fn relative_white_balance_matrix(temperature: f32, tint: f32) -> [f32
 }
 fn apply_white_balance(rgb: &mut [f32; 3], matrix: [f32; 9]) {
     let before = luminance(*rgb);
-    let mut adjusted = color_matrix(matrix, *rgb).map(|v| v.max(0.0));
+    let mut adjusted = color_matrix(matrix, *rgb);
     let after = luminance(adjusted);
     if after > 1e-8 {
         for v in &mut adjusted {
@@ -218,6 +220,7 @@ fn sample_curve(value: f32, lut: &[f32], channel: usize) -> f32 {
     lut[lo * 4 + channel] * (1.0 - fraction)
         + lut[hi * 4 + channel] * fraction
         + (value - 1.0).max(0.0)
+        + value.min(0.0)
 }
 
 fn rgb_to_hsv(rgb: [f32; 3]) -> [f32; 3] {
@@ -306,9 +309,6 @@ fn apply_color(rgb: &mut [f32; 3], settings: &NativeDevelopSettings) {
     if settings.saturation != 0 {
         apply_saturation(rgb, (1.0 + settings.saturation as f32 / 100.0).max(0.0));
     }
-    for channel in rgb {
-        *channel = channel.max(0.0);
-    }
 }
 
 fn apply_vignette(
@@ -342,7 +342,7 @@ fn apply_vignette(
 fn apply_saturation(rgb: &mut [f32; 3], factor: f32) {
     let luma = luminance(*rgb);
     for channel in rgb {
-        *channel = (luma + (*channel - luma) * factor).max(0.0);
+        *channel = luma + (*channel - luma) * factor;
     }
 }
 
@@ -365,17 +365,14 @@ fn sample_mask(mask: &NativeDevelopMask, x: usize, y: usize, width: usize, heigh
 }
 
 pub(super) fn base_tone_pixel(
-    buffer: &[u8],
+    source: &super::linear_source::LinearSource<'_>,
     index: usize,
     settings: &NativeDevelopSettings,
     white_balance: [f32; 9],
     exposure_gain: f32,
-) -> [f32; 3] {
-    let start = index * 8;
-    let mut rgb = std::array::from_fn(|channel| {
-        let offset = start + channel * 2;
-        u16::from_le_bytes([buffer[offset], buffer[offset + 1]]) as f32 / 65535.0
-    });
+) -> Result<[f32; 3], RawError> {
+    let pixel=source.pixel(index)?;
+    let mut rgb = [pixel[0],pixel[1],pixel[2]];
     apply_white_balance(&mut rgb, white_balance);
     for channel in &mut rgb {
         *channel *= exposure_gain;
@@ -384,7 +381,7 @@ pub(super) fn base_tone_pixel(
     apply_tone(&mut rgb, settings.shadows, settings.highlights);
     apply_endpoints(&mut rgb, base_luma, settings.whites, settings.blacks);
     apply_contrast(&mut rgb, settings.contrast as f32);
-    rgb
+    Ok(rgb)
 }
 
 pub fn export_raw_develop(
@@ -395,7 +392,7 @@ pub fn export_raw_develop(
 ) -> Result<String, RawError> {
     super::quality::base_matrix(&settings)?;
     let format_lower = options.format.to_lowercase();
-    if !matches!(format_lower.as_str(), "png" | "jpeg" | "jpg") {
+    if !matches!(format_lower.as_str(), "png" | "jpeg" | "jpg" | "tiff" | "tif" | "tiff-f32") {
         return Err(RawError::DecodeFailed(format!(
             "Unsupported RAW export format '{}'",
             options.format
@@ -509,21 +506,7 @@ pub fn export_raw_develop(
         .with_asset(asset_id, |asset| {
             let width = asset.width;
             let height = asset.height;
-            let pixel_count = width
-                .checked_mul(height)
-                .filter(|count| *count <= 150_000_000)
-                .ok_or_else(|| {
-                    RawError::DecodeFailed("Invalid RAW source dimensions".to_string())
-                })?;
-            if asset.pixel_format != crate::raw::types::PixelFormat::RGBA16
-                || width == 0
-                || height == 0
-                || pixel_count.checked_mul(8) != Some(asset.buffer.len())
-            {
-                return Err(RawError::DecodeFailed(
-                    "Invalid RAW RGBA16 asset dimensions or buffer".to_string(),
-                ));
-            }
+            super::linear_source::LinearSource::new(asset)?;
             Ok((width, height))
         })
         .ok_or_else(|| RawError::DecodeFailed("RAW export source is unavailable".to_string()))??;
@@ -531,10 +514,19 @@ pub fn export_raw_develop(
 
     // Keep precision through the last encode; PNG retains 16-bit channels.
     let mut out_rgba = Vec::new();
-    out_rgba
+    let floating_output=format_lower=="tiff-f32";
+    if floating_output && (options.width.is_some_and(|w|w as usize!=width) || options.height.is_some_and(|h|h as usize!=height)) {
+        return Err(RawError::DecodeFailed("Linear float diagnostic export requires original dimensions".into()));
+    }
+    if !floating_output {out_rgba
         .try_reserve_exact(pixel_count * 4)
-        .map_err(|_| RawError::DecodeFailed("Insufficient memory for RAW export".to_string()))?;
-    out_rgba.resize(pixel_count * 4, 0u16);
+        .map_err(|_| RawError::OutOfMemory)?;}
+    if !floating_output {out_rgba.resize(pixel_count * 4, 0u16);}
+    let mut out_float=Vec::new();
+    if floating_output {
+        out_float.try_reserve_exact(pixel_count*4).map_err(|_|RawError::OutOfMemory)?;
+        out_float.resize(pixel_count*4,0f32);
+    }
 
     // Compute exposure multiplier: 2^EV (Photographic scale)
     let exposure_gain = 2.0f32.powf(settings.exposure);
@@ -583,6 +575,7 @@ pub fn export_raw_develop(
         // stripes and while the more expensive spatial/color processing runs.
         let base = global_asset_registry()
             .with_asset(asset_id, |asset| {
+                let source=super::linear_source::LinearSource::new(asset)?;
                 let mut base = Vec::new();
                 base.try_reserve_exact((bottom - top) * width)
                     .map_err(|_| {
@@ -593,12 +586,12 @@ pub fn export_raw_develop(
                 for y in top..bottom {
                     for x in 0..width {
                         base.push(base_tone_pixel(
-                            &asset.buffer,
+                            &source,
                             y * width + x,
                             &settings,
                             custom_wb,
                             exposure_gain,
-                        ));
+                        )?);
                     }
                 }
                 Ok::<_, RawError>(base)
@@ -668,18 +661,34 @@ pub fn export_raw_develop(
                 );
 
                 let out_idx = i * 4;
+                let rgb=options.output_profile.convert(rgb);
                 for channel in 0..3 {
-                    out_rgba[out_idx + channel] = (linear_to_srgb(rgb[channel]) * 65535.0)
+                    if floating_output {out_float[out_idx+channel]=rgb[channel];}
+                    else {out_rgba[out_idx + channel] = (linear_to_srgb(rgb[channel]) * 65535.0)
                         .round()
                         .clamp(0.0, 65535.0)
-                        as u16;
+                        as u16;}
                 }
-                out_rgba[out_idx + 3] = 65535;
+                if floating_output {out_float[out_idx+3]=1.0;} else {out_rgba[out_idx + 3] = 65535;}
             }
         }
     }
 
     drop(source_lease);
+
+    if floating_output {
+        if options.width.is_some_and(|w|w as usize!=width) || options.height.is_some_and(|h|h as usize!=height) {
+            return Err(RawError::DecodeFailed("Linear float diagnostic export requires original dimensions".into()));
+        }
+        use image::ImageEncoder;
+        let mut writer=Cursor::new(Vec::new());
+        let mut encoder=image::codecs::tiff::TiffEncoder::new(&mut writer);
+        encoder.set_icc_profile(options.output_profile.icc(true)).map_err(|e|RawError::DecodeFailed(e.to_string()))?;
+        let bytes:Vec<u8>=out_float.into_iter().flat_map(f32::to_ne_bytes).collect();
+        encoder.write_image(&bytes,width as u32,height as u32,image::ExtendedColorType::Rgba32F).map_err(|e|RawError::DecodeFailed(e.to_string()))?;
+        crate::filesystem::atomic_write(std::path::Path::new(output_path),writer.get_ref()).map_err(RawError::PermissionDenied)?;
+        return Ok(output_path.into());
+    }
 
     // Encode to target format and write to output_path
     let img = image::ImageBuffer::<image::Rgba<u16>, Vec<u16>>::from_raw(
@@ -707,16 +716,18 @@ pub fn export_raw_develop(
     let mut writer = Cursor::new(Vec::new());
 
     if format_lower == "png" {
-        let mut encoder = png::Encoder::new(&mut writer, img.width(), img.height());
+        let mut info=png::Info::with_size(img.width(),img.height());
+        info.icc_profile=Some(std::borrow::Cow::Owned(options.output_profile.icc(false)));
+        let mut encoder = png::Encoder::with_info(&mut writer,info).map_err(|e|RawError::DecodeFailed(e.to_string()))?;
         encoder.set_color(png::ColorType::Rgba);
         encoder.set_depth(png::BitDepth::Sixteen);
-        encoder.set_source_srgb(png::SrgbRenderingIntent::RelativeColorimetric);
         encoder.set_source_gamma(png::ScaledFloat::from_scaled(45455));
+        let (red,green,blue)=if matches!(options.output_profile,super::output_profile::OutputProfile::DisplayP3) {
+            ((0.68,0.32),(0.265,0.69),(0.15,0.06))
+        } else {((0.64,0.33),(0.30,0.60),(0.15,0.06))};
         encoder.set_source_chromaticities(png::SourceChromaticities::new(
             (0.3127, 0.3290),
-            (0.64, 0.33),
-            (0.30, 0.60),
-            (0.15, 0.06),
+            red,green,blue,
         ));
         let mut png_writer = encoder
             .write_header()
@@ -732,6 +743,12 @@ pub fn export_raw_develop(
         png_writer
             .finish()
             .map_err(|e| RawError::DecodeFailed(format!("PNG finish failed: {e}")))?;
+    } else if matches!(format_lower.as_str(),"tiff"|"tif") {
+        use image::ImageEncoder;
+        let mut encoder=image::codecs::tiff::TiffEncoder::new(&mut writer);
+        encoder.set_icc_profile(options.output_profile.icc(false)).map_err(|e|RawError::DecodeFailed(e.to_string()))?;
+        let bytes:Vec<u8>=img.as_raw().iter().flat_map(|v|v.to_ne_bytes()).collect();
+        encoder.write_image(&bytes,img.width(),img.height(),image::ExtendedColorType::Rgba16).map_err(|e|RawError::DecodeFailed(e.to_string()))?;
     } else {
         let rgb_img = image::DynamicImage::ImageRgba16(img).to_rgb8();
         let quality = options
@@ -741,7 +758,7 @@ pub fn export_raw_develop(
         use image::ImageEncoder;
         let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut writer, quality);
         encoder
-            .set_icc_profile(super::output_profile::srgb_icc_profile())
+            .set_icc_profile(options.output_profile.icc(false))
             .map_err(|e| RawError::DecodeFailed(format!("JPEG color profile failed: {e}")))?;
         encoder
             .encode_image(&rgb_img)
@@ -761,6 +778,47 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static NEXT_TEST_ID: AtomicU64 = AtomicU64::new(1);
+
+    #[test]
+    fn diagnostic_tiff_retains_signed_linear_values_and_headroom() {
+        let id="diagnostic_float_raw";
+        let pixel=[-0.125f32,1.5,0.000001,1.0];
+        global_asset_registry().register(NativeImageAsset {id:id.into(),width:1,height:1,pixel_format:PixelFormat::RGBA32F,
+            buffer:pixel.into_iter().flat_map(f32::to_le_bytes).collect(),metadata:None,ref_count:1,created_at:0});
+        let path=std::env::temp_dir().join("lumiseq_diagnostic_float.tif");
+        let options=serde_json::from_value(serde_json::json!({"format":"tiff-f32","quality":null,"width":null,"height":null})).unwrap();
+        export_raw_develop(id,settings(),options,path.to_str().unwrap()).unwrap();
+        let decoded=image::open(&path).unwrap().to_rgba32f();
+        assert_eq!(decoded.get_pixel(0,0).0,pixel);
+        global_asset_registry().release(id);
+    }
+
+    #[test]
+    fn profile_aware_png_and_tiff_preserve_16bit_p3_delivery() {
+        let id="profile_aware_raw".to_string();
+        global_asset_registry().register(NativeImageAsset {id:id.clone(),width:1,height:1,pixel_format:PixelFormat::RGBA16,
+            buffer:[32768u16,16384,8192,65535].into_iter().flat_map(u16::to_le_bytes).collect(),metadata:None,ref_count:1,created_at:0});
+        for format in ["png","tiff"] {
+            let path=std::env::temp_dir().join(format!("lumiseq_p3_{}.{format}",NEXT_TEST_ID.fetch_add(1,Ordering::Relaxed)));
+            let options:NativeExportOptions=serde_json::from_value(serde_json::json!({"format":format,"quality":null,"width":null,"height":null,"output_profile":"display-p3"})).unwrap();
+            export_raw_develop(&id,settings(),options,path.to_str().unwrap()).unwrap();
+            let image=image::open(&path).unwrap().to_rgba16();
+            assert_eq!(image.dimensions(),(1,1));
+            // Independent IEC/P3 primary conversion of [0.5,0.25,0.125].
+            let expected=[46227i32,35730,26910];
+            for c in 0..3 {assert!((image.get_pixel(0,0).0[c] as i32-expected[c]).abs()<8,"{format} channel {c}");}
+            use image::ImageDecoder;
+            let profile=if format=="tiff" {
+                let mut tiff=tiff::decoder::Decoder::new(std::io::BufReader::new(std::fs::File::open(&path).unwrap())).unwrap();
+                tiff.get_tag_u8_vec(tiff::tags::Tag::IccProfile).unwrap()
+            } else {
+                let mut decoder=image::ImageReader::open(&path).unwrap().with_guessed_format().unwrap().into_decoder().unwrap();
+                decoder.icc_profile().unwrap().unwrap_or_else(||panic!("Missing ICC in {format}"))
+            };
+            assert!(profile.windows(18).any(|v|v==b"Lumiseq Display P3"));
+        }
+        global_asset_registry().release(&id);
+    }
 
     /// Opt-in camera regression: private images/output stay outside tracked source.
     #[test]
@@ -875,7 +933,7 @@ mod tests {
             export_raw_develop(
                 &id,
                 develop.clone(),
-                NativeExportOptions {
+                NativeExportOptions { output_profile: Default::default(),
                     format: "png".into(),
                     quality: None,
                     width: None,
@@ -911,7 +969,7 @@ mod tests {
                 export_raw_develop(
                     &id,
                     develop,
-                    NativeExportOptions {
+                    NativeExportOptions { output_profile: Default::default(),
                         format: "jpeg".into(),
                         quality: Some(0.95),
                         width: None,
@@ -992,6 +1050,24 @@ mod tests {
         }
     }
 
+    #[test]
+    fn float_source_headroom_is_reduced_before_delivery_quantization() {
+        let id="raw_float_headroom_export";
+        global_asset_registry().register(NativeImageAsset {
+            id:id.into(),width:1,height:1,pixel_format:PixelFormat::RGBA32F,
+            buffer:[1.5f32,0.5,0.000001,1.0].into_iter().flat_map(f32::to_le_bytes).collect(),
+            metadata:None,ref_count:1,created_at:0,
+        });
+        let path=std::env::temp_dir().join("lumiseq_float_headroom.png");
+        let mut s=settings();s.exposure=-1.0;
+        export_raw_develop(id,s,NativeExportOptions{output_profile:Default::default(),format:"png".into(),quality:None,width:None,height:None},path.to_str().unwrap()).unwrap();
+        let decoded=image::open(&path).unwrap().to_rgba16().get_pixel(0,0).0;
+        assert!((decoded[0] as f32/65535.0-linear_to_srgb(0.75)).abs()<2.0/65535.0);
+        assert_ne!(decoded[0],65535);
+        global_asset_registry().release(id);
+        std::fs::remove_file(path).unwrap();
+    }
+
     fn export_pixel(linear_rgb: [f32; 3], settings: NativeDevelopSettings) -> [u8; 3] {
         export_pixels(&[linear_rgb], settings)[0]
     }
@@ -1022,7 +1098,7 @@ mod tests {
         export_raw_develop(
             &asset_id,
             settings,
-            NativeExportOptions {
+            NativeExportOptions { output_profile: Default::default(),
                 format: "png".to_string(),
                 quality: None,
                 width: None,
@@ -1131,7 +1207,7 @@ mod tests {
             export_raw_develop(
                 &asset_id,
                 settings(),
-                NativeExportOptions {
+                NativeExportOptions { output_profile: Default::default(),
                     format: format.to_string(),
                     quality: Some(0.95),
                     width: None,
@@ -1167,10 +1243,8 @@ mod tests {
                         assert_eq!(body, expected);
                         tags.push("cHRM");
                     }
-                    assert_ne!(
-                        name, b"iCCP",
-                        "PNG must not declare conflicting color profiles"
-                    );
+                    assert_ne!(name,b"sRGB","ICC-tagged PNG must not declare a conflicting sRGB chunk");
+                    if name==b"iCCP" {tags.push("iCCP");}
                     if name == b"IDAT" {
                         break;
                     }
@@ -1179,7 +1253,7 @@ mod tests {
                 assert_eq!(
                     tags.len(),
                     3,
-                    "Missing sRGB/gAMA/cHRM delivery metadata: {tags:?}"
+                    "Missing iCCP/gAMA/cHRM delivery metadata: {tags:?}"
                 );
             } else {
                 let mut decoder =
@@ -1274,7 +1348,7 @@ mod tests {
         export_raw_develop(
             &asset_id,
             settings(),
-            NativeExportOptions {
+            NativeExportOptions { output_profile: Default::default(),
                 format: "png".to_string(),
                 quality: None,
                 width: None,
@@ -1444,7 +1518,7 @@ mod tests {
         let result = export_raw_develop(
             "unused",
             adjusted,
-            NativeExportOptions {
+            NativeExportOptions { output_profile: Default::default(),
                 format: "png".to_string(),
                 quality: None,
                 width: None,
@@ -1467,7 +1541,7 @@ mod tests {
             let result = export_raw_develop(
                 "unused",
                 invalid,
-                NativeExportOptions {
+                NativeExportOptions { output_profile: Default::default(),
                     format: "png".to_string(),
                     quality: None,
                     width: None,
@@ -1511,7 +1585,7 @@ mod tests {
             export_raw_develop(
                 &asset_id,
                 settings(),
-                NativeExportOptions {
+                NativeExportOptions { output_profile: Default::default(),
                     format: "jpeg".to_string(),
                     quality: Some(quality),
                     width: None,
@@ -1550,7 +1624,7 @@ mod tests {
         export_raw_develop(
             &asset_id,
             settings(),
-            NativeExportOptions {
+            NativeExportOptions { output_profile: Default::default(),
                 format: "png".to_string(),
                 quality: None,
                 width: Some(2),
@@ -1569,15 +1643,15 @@ mod tests {
         let result = export_raw_develop(
             "unused",
             settings(),
-            NativeExportOptions {
-                format: "tiff".to_string(),
+            NativeExportOptions { output_profile: Default::default(),
+                format: "bmp".to_string(),
                 quality: None,
                 width: None,
                 height: None,
             },
-            "unused.tiff",
+            "unused.bmp",
         );
-        assert!(matches!(result, Err(RawError::DecodeFailed(message)) if message.contains("tiff")));
+        assert!(matches!(result, Err(RawError::DecodeFailed(message)) if message.contains("bmp")));
     }
 
     #[test]

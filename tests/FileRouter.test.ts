@@ -2,6 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { routeFile, isRawFile, isRasterFile } from '../src/router/FileRouter';
 
 describe('FileRouter', () => {
+  it('routes native camera formats from additional manufacturers to Develop', () => {
+    for (const file of ['camera.3FR','camera.FFF','camera.IIQ','camera.X3F','camera.MRW','camera.NRW','camera.CRW','camera.KDC','camera.DCR','camera.ERF','camera.GPR','camera.MOS','camera.RWL','camera.RWZ','camera.SR2','camera.SRF','camera.PEF']) {
+      expect(routeFile(file).fileType, file).toBe('raw');
+      expect(routeFile(file).targetWorkspace, file).toBe('develop');
+    }
+  });
   it('6. RAW files are routed to Develop Workspace', () => {
     const rawFiles = [
       'IMG_1001.CR2',

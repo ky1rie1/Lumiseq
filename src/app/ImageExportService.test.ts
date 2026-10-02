@@ -7,7 +7,7 @@ describe('image delivery export', () => {
   it('reports actual native PNG16 and JPEG8 color contracts', () => {
     const raw = createDevelopDocument({ sourceUri: 'C:\\photo.nef', fileName: 'photo.nef', isRaw: true });
     raw.nativeAssetId = 'native-color';
-    expect(getImageExportColorContract(raw, 'png')).toEqual({ colorSpace: 'srgb', bitDepth: 16, backend: 'native', metadata: 'srgb-chunks' });
+    expect(getImageExportColorContract(raw, 'png')).toEqual({ colorSpace: 'srgb', bitDepth: 16, backend: 'native', metadata: 'icc-profile' });
     expect(getImageExportColorContract(raw, 'jpeg')).toEqual({ colorSpace: 'srgb', bitDepth: 8, backend: 'native', metadata: 'icc-profile' });
   });
 
@@ -29,6 +29,16 @@ describe('image delivery export', () => {
     const service = new ImageExportService({ exportRaw, renderEdit: vi.fn(), renderDevelop: vi.fn(), write: vi.fn() });
     await service.export(raw, 'C:\\out.jpg', { format: 'jpeg', quality: 82, width: 2000, height: 1500 });
     expect(exportRaw).toHaveBeenCalledWith('native-1', raw.settings, { format: 'jpeg', quality: 0.82, width: 2000, height: 1500 }, 'C:\\out.jpg');
+  });
+
+  it('exports TIFF16 P3 through native pixels and rejects profile substitution on Canvas',async()=>{
+    const raw=createDevelopDocument({sourceUri:'C:\\photo.arw',fileName:'photo.arw',isRaw:true});raw.nativeAssetId='native-p3';
+    const exportRaw=vi.fn(async()=>'C:\\out.tiff');
+    const service=new ImageExportService({exportRaw,renderEdit:vi.fn(),renderDevelop:vi.fn(),write:vi.fn()});
+    await service.export(raw,'C:\\out.tiff',{format:'tiff',outputProfile:'display-p3',quality:90,width:6192,height:4128});
+    expect(exportRaw).toHaveBeenCalledWith('native-p3',raw.settings,{format:'tiff',outputProfile:'display-p3',quality:.9,width:6192,height:4128},'C:\\out.tiff');
+    const raster=createEditDocument({name:'raster',width:1,height:1});
+    await expect(service.export(raster,'C:\\out.png',{format:'png',outputProfile:'display-p3',quality:90,width:1,height:1})).rejects.toThrow(/native|原生/i);
   });
 
   it('renders and writes a composited PNG without changing project save state', async () => {

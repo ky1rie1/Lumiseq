@@ -61,6 +61,8 @@ export function createDevelopDocument(params: {
   width?: number;
   height?: number;
   isRaw: boolean;
+  rawProcessingVersion?: 1 | 2;
+  rawCorrectionMode?: DevelopDocument['rawCorrectionMode'];
   rawEngineAttached?: boolean;
   rawState?: RawLoadingState;
   exif?: PhotoExif;
@@ -76,6 +78,8 @@ export function createDevelopDocument(params: {
   return {
     id: params.id || `doc_dev_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
     kind: 'develop',
+    rawProcessingVersion: isRaw ? (params.rawProcessingVersion ?? 2) : undefined,
+    rawCorrectionMode: isRaw ? (params.rawCorrectionMode ?? 'camera') : undefined,
     sourceUri: params.sourceUri,
     sourceAssetId: params.sourceAssetId,
     fileName: params.fileName,

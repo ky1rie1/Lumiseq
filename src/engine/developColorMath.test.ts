@@ -2,6 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { createDefaultDevelopSettings } from '../document/DevelopDocument';
 import { applyBaseTone, applyDevelopColor, applyRelativeWhiteBalance, buildDevelopCurveLUT, curvesAreNeutral, linearToSrgb, luminance, relativeWhiteBalanceMatrix, sampleDevelopCurve, srgbToLinear, type RGB } from './developColorMath';
 describe('develop color contract',()=>{
+ it('keeps signed gamut values through neutral white balance and color',()=>{
+  const settings=createDefaultDevelopSettings(true),input:RGB=[-.125,1.5,.000001];
+  expect(applyRelativeWhiteBalance(input,[1,0,0,0,1,0,0,0,1])).toEqual(input);
+  expect(applyDevelopColor(input,settings,buildDevelopCurveLUT(settings.curves))).toEqual(input);
+ });
  it('round trips the full display ramp with neutral settings and camera WB metadata',()=>{
   const settings=createDefaultDevelopSettings(true);settings.whiteBalance.cameraMultipliers=[2.3,1,1.7,1];
   const lut=buildDevelopCurveLUT(settings.curves),matrix=relativeWhiteBalanceMatrix(settings.whiteBalance);

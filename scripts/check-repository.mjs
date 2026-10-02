@@ -7,6 +7,8 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const failures = [];
 const tracked = execFileSync('git', ['ls-files', '-z'], { cwd: root }).toString('utf8').split('\0').filter(Boolean);
 const publishable = new Set(execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], { cwd: root }).toString('utf8').split('\0').filter(Boolean));
+const rawExtensions = new Set(JSON.parse(await readFile(path.join(root, 'src/config/rawFormats.json'), 'utf8')));
+const syntheticRawFixture = 'tests/fixtures/sample.dng';
 const files = [...publishable].filter(file => file.endsWith('.md') && (!file.includes('/') || /^(?:docs|tests|resources|integration|artifacts|scripts)\//.test(file))).map(file => path.join(root, file));
 
 let links = 0;
@@ -47,6 +49,9 @@ const forbidden = /^(?:node_modules|dist|dist-ssr|target|build-cache|generated-t
 for (const file of tracked) {
   if (file === '.env.example') continue;
   if (forbidden.test(file)) failures.push(`Tracked generated or private file: ${file}`);
+  if (rawExtensions.has(path.extname(file).slice(1).toLowerCase()) && file !== syntheticRawFixture) {
+    failures.push(`Tracked camera original: ${file}; keep camera samples outside the repository.`);
+  }
   try {
     const metadata = await stat(path.join(root, file));
     totalBytes += metadata.size;

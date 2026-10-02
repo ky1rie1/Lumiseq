@@ -1,21 +1,11 @@
 use crate::assets::global_asset_registry;
-use crate::raw::types::{PixelFormat, RawError};
+use crate::raw::types::RawError;
 
 /// Deterministic source-spanning grid; no image clone, resampling, gamma encoding or edits.
 pub fn sample_raw_linear_rgb(asset_id: &str) -> Result<Vec<[f32; 3]>, RawError> {
     global_asset_registry()
         .with_asset(asset_id, |asset| {
-            let pixels = asset.width.checked_mul(asset.height);
-            if asset.pixel_format != PixelFormat::RGBA16
-                || asset.width == 0
-                || asset.height == 0
-                || pixels.is_none_or(|n| n > 150_000_000)
-                || pixels.and_then(|n| n.checked_mul(8)) != Some(asset.buffer.len())
-            {
-                return Err(RawError::DecodeFailed(
-                    "Invalid RAW RGBA16 source for automatic white balance".to_string(),
-                ));
-            }
+            let source=super::linear_source::LinearSource::new(asset)?;
             let columns = asset.width.min(128);
             let rows = asset.height.min(128);
             let mut samples = Vec::with_capacity(columns * rows);
@@ -23,20 +13,12 @@ pub fn sample_raw_linear_rgb(asset_id: &str) -> Result<Vec<[f32; 3]>, RawError> 
                 for column in 0..columns {
                     let y = (2 * row + 1) * asset.height / (2 * rows);
                     let x = (2 * column + 1) * asset.width / (2 * columns);
-                    let offset = (y * asset.width + x) * 8;
-                    let read = |c: usize| {
-                        u16::from_le_bytes([
-                            asset.buffer[offset + c * 2],
-                            asset.buffer[offset + c * 2 + 1],
-                        ])
-                    };
-                    if read(3) < 64224 {
+                    let pixel=source.pixel(y*asset.width+x)?;
+                    if pixel[3] < 0.98 {
                         continue;
                     }
                     samples.push([
-                        read(0) as f32 / 65535.0,
-                        read(1) as f32 / 65535.0,
-                        read(2) as f32 / 65535.0,
+                        pixel[0], pixel[1], pixel[2],
                     ]);
                 }
             }

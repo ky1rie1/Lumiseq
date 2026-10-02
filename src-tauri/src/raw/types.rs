@@ -26,6 +26,10 @@ pub enum HighlightStrategy {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RawMetadata {
+    #[serde(default = "legacy_processing_version")]
+    pub processing_version: u8,
+    #[serde(default)]
+    pub optical_correction: Option<RawOpticalCorrection>,
     pub camera_make: String,
     pub camera_model: String,
     pub lens_model: Option<String>,
@@ -49,6 +53,28 @@ pub struct RawMetadata {
     pub has_embedded_preview: bool,
     pub gps_latitude: Option<f64>,
     pub gps_longitude: Option<f64>,
+}
+
+fn legacy_processing_version()->u8 {1}
+
+#[derive(Debug,Clone,Copy,Default,PartialEq,Eq,Serialize,Deserialize)]
+#[serde(rename_all="kebab-case")]
+pub enum RawCorrectionMode {
+    #[default]
+    Camera,
+    Uncorrected,
+}
+
+#[derive(Debug,Clone,Serialize,Deserialize)]
+pub struct RawOpticalCorrection {
+    pub mode:RawCorrectionMode,
+    pub provenance:String,
+    pub source_width:usize,
+    pub source_height:usize,
+    pub active_crop:[usize;4],
+    pub distortion_applied:bool,
+    pub aberration_applied:bool,
+    pub shading_applied:bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

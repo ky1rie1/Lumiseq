@@ -4,6 +4,7 @@ import { ImageColorPipelineState } from './colorPipeline';
 import type { AgentRun } from '../ai/types';
 
 export type WhiteBalanceMode = 'as-shot' | 'auto' | 'custom';
+export type RawCorrectionMode = 'camera' | 'uncorrected';
 
 /** Correction of camera-balanced linear sRGB; this is not a sensor illuminant estimate. */
 export interface ResolvedAutoWhiteBalance {
@@ -121,6 +122,7 @@ export interface DevelopSettings {
 }
 
 export interface PhotoExif {
+  opticalCorrection?:import('../platform/IPlatformBridge').NativeRawMetadata['optical_correction'];
   cameraMake?: string;
   cameraModel?: string;
   lensModel?: string;
@@ -139,6 +141,9 @@ export interface PhotoExif {
 }
 
 export interface DevelopDocument {
+  /** Decoder/geometry contract; absent in older RAW projects means legacy v1. */
+  rawProcessingVersion?: 1 | 2;
+  rawCorrectionMode?: RawCorrectionMode;
   id: string;
   kind: 'develop';
   sourceUri: string;

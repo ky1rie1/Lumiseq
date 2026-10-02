@@ -48,6 +48,8 @@ pub fn run() {
                 commands::extract_raw_thumbnail,
                 commands::decode_raw_image,
                 commands::get_raw_display_tile,
+                commands::get_raw_linear_preview,
+                commands::get_raw_linear_tile,
                 commands::get_raw_linear_sample,
                 commands::get_raw_spatial_analysis,
                 commands::cancel_raw_decode,

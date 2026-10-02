@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased — RAW quality and compatibility
+
+- Decode camera-space samples before float white balance and camera-to-working conversion. New RAW projects use RGBA32F working pixels, LF32 overview/tile transport and verified RGBA32F GPU targets; signed gamut and highlight headroom survive until delivery. Existing projects retain processing version 1.
+- Apply Sony active crop and embedded distortion, chromatic aberration and shading tables. Correct the A6700 sample to 6192×4128; bounds-safe sensor mapping avoids invented black borders.
+- Add a reversible separate RAW variant for uncorrected inspection or explicit legacy-project upgrade. Preserve the original project; refuse coordinate migration with local masks. Persist correction mode/provenance and expose the same operation through AI/MCP.
+- Add native TIFF16 and sRGB / Display P3 ICC output to the export dialog and existing AI export tool. Diagnostic linear TIFF32F retains signed values. Camera demosaic remains integer; floating sensor DNG is explicitly rejected rather than silently quantized.
+- Add GoPro GPR sensor decoding through the pinned official SDK and enable Sigma X3F. Correct monochrome output and fourth-color-plane opacity; validate native buffer dimensions, channels and length before conversion.
+- Keep RAW import working when an embedded thumbnail is unavailable. Share the RAW extension catalog across frontend routing, native dialogs and project recovery; include Sinar STI and remove video-only R3D.
+- Identify unsupported Nikon HE/HE* compression explicitly. The codec audit covers 65 of 72 public samples; the new float path was exercised on 63 passing CC0 captures plus a private A6700. Full-size Sony TIFF16 and two Nikon Z7 chart PNG16 exports passed; frozen chart means were 1.552104 / 1.434303 ΔE00 against publisher renderings, not physical or Adobe color certification. See [RAW compatibility](docs/RAW_COMPATIBILITY.md).
+- Verify full-size ICC-tagged TIFF16 on X-Trans RAF, monochrome DNG, Sigma X3F, GoPro GPR, DJI DNG and 64.6 MP Light L16 DNG, independently of reduced codec checks.
+
 ## 0.9.7 — 2026-10-02
 
 - Explicitly bundle the x64 WebView2 Loader at the installation root. The unpublished 0.9.6 installer candidate omitted it despite containing the Runtime bootstrapper.

@@ -77,7 +77,7 @@ export function resolveAutomaticWhiteBalance(samples: readonly (readonly number[
   status:supported?'resolved':'as-shot-fallback' };
 }
 export function applyRelativeWhiteBalance(rgb: RGB, matrix: number[]): RGB {
- const adjusted=multiplyColorMatrix(matrix,rgb).map(v=>Math.max(0,v)) as RGB;
+ const adjusted=multiplyColorMatrix(matrix,rgb);
  const before=luminance(rgb),after=luminance(adjusted);
  return adjusted.map(v=>v*(after>1e-8?before/after:1)) as RGB;
 }
@@ -106,7 +106,7 @@ export function sampleDevelopCurve(value: number, lut: Float32Array, channel: nu
  const size=lut.length/4,p=Math.max(0,Math.min(1,value))*(size-1),a=Math.floor(p),b=Math.min(size-1,a+1);
  const mapped=lut[a*4+channel]*(1-(p-a))+lut[b*4+channel]*(p-a);
  // Preserve HDR distance above the endpoint; no premature clipping.
- return mapped+Math.max(0,value-1);
+ return mapped+Math.max(0,value-1)+Math.min(0,value);
 }
 export function applyDevelopColor(rgb: RGB,settings: DevelopSettings,lut: Float32Array): RGB {
  let color=rgb;
@@ -116,5 +116,5 @@ export function applyDevelopColor(rgb: RGB,settings: DevelopSettings,lut: Float3
  let hue=0;if(displayMax>displayMin){const d=displayMax-displayMin;hue=(displayMax===display[0]?(display[1]-display[2])/d+(display[1]<display[2]?6:0):displayMax===display[1]?(display[2]-display[0])/d+2:(display[0]-display[1])/d+4)/6;}
  if(settings.vibrance){let boost=(1-sat)*settings.vibrance/100;if(hue>=.02&&hue<.12)boost*=.45;const y=luminance(color);color=color.map(v=>y+(v-y)*Math.max(0,Math.min(2.5,1+boost))) as RGB;}
  if(settings.saturation){const y=luminance(color);color=color.map(v=>y+(v-y)*Math.max(0,1+settings.saturation/100)) as RGB;}
- return color.map(v=>Math.max(0,v)) as RGB;
+ return color;
 }

@@ -1,13 +1,14 @@
 import { UpdateDevelopSettingsCommand } from '../commands/develop/UpdateDevelopSettingsCommand';
+import { CreateRawVariantCommand } from '../commands/develop/CreateRawVariantCommand';
 import { ResetDevelopSettingsCommand } from '../commands/develop/ResetDevelopSettingsCommand';
 import { defaultAssetManager } from '../assets/AssetManager';
 import { defaultDocumentManager } from '../document/DocumentManager';
-import { createDefaultDevelopSettings } from '../document/DevelopDocument';
+import { createDefaultDevelopSettings, createDevelopDocument } from '../document/DevelopDocument';
 import { defaultCommandBus } from '../history/CommandBus';
 import { ColorChannel } from '../types/common';
 import { IAssetManager } from '../types/asset';
 import { IDocumentManager } from '../types/document';
-import { DevelopDocument, DevelopMask, DevelopSettings, ToneCurves, WhiteBalanceSettings } from '../types/develop';
+import { DevelopDocument, DevelopMask, DevelopSettings, RawCorrectionMode, ToneCurves, WhiteBalanceSettings } from '../types/develop';
 import { ICommandBus, TransactionToken } from '../types/history';
 import { PARAM_DEFINITIONS } from '../ui/shared/parameterDefinitions';
 import { rasterizeDevelopMask } from './maskRaster';
@@ -98,6 +99,23 @@ export class DevelopOperationService {
   private curveDocumentId: string | null = null;
   private unsubscribeCurve: (() => void) | null = null;
   private curveToken: TransactionToken | null = null;
+
+  async createRawVariant(documentId: string, mode: RawCorrectionMode): Promise<{ commandId: string; documentId: string }> {
+    if (mode !== 'camera' && mode !== 'uncorrected') throw new RangeError('Unsupported RAW correction mode');
+    const original = this.requireDocument(documentId);
+    if (!original.isRaw) throw new RangeError('This operation requires a RAW source');
+    if (original.settings.masks.length) throw new RangeError('照片包含局部蒙版，不能复制到不同的镜头坐标。请从原始 RAW 新建。');
+    const exif = structuredClone(original.exif);
+    delete exif.opticalCorrection;
+    const variant = createDevelopDocument({ sourceUri: original.sourceUri,
+      fileName: `${original.fileName} · ${mode === 'camera' ? '校正副本' : '未校正副本'}`,
+      fileSizeBytes: original.fileSizeBytes, width: original.width, height: original.height,
+      isRaw: true, rawProcessingVersion: 2, rawCorrectionMode: mode,
+      exif, settings: structuredClone(original.settings) });
+    const command = new CreateRawVariantCommand(variant, original.id, this.documents);
+    await this.history.execute(command);
+    return { commandId: command.id, documentId: variant.id };
+  }
 
   private releaseCurveChange(): void {
     this.unsubscribeCurve?.();

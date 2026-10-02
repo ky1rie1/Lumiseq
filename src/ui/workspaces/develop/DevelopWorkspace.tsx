@@ -124,6 +124,16 @@ export const DevelopWorkspace: React.FC<{ onExport: () => void }> = ({ onExport 
   const [comparisonId, setComparisonId] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [isAutoToning, setIsAutoToning] = useState(false);
+  const [isCreatingRawVariant, setIsCreatingRawVariant] = useState(false);
+  const handleRawVariant = async (mode: 'camera' | 'uncorrected') => {
+    if (!currentDoc || isCreatingRawVariant) return;
+    setIsCreatingRawVariant(true);
+    try {
+      await defaultDevelopOperations.createRawVariant(currentDoc.id, mode);
+      setStatusMessage(mode === 'camera' ? '已新建校正副本，原工程已保留' : '已新建未校正副本，原工程已保留');
+    } catch (error) { setStatusMessage(error instanceof Error ? error.message : String(error)); }
+    finally { setIsCreatingRawVariant(false); }
+  };
   const autoToneGeneration = useRef(0);
   // Any preview-affecting edit, photo switch or unmount invalidates in-flight analysis.
   useEffect(() => {
@@ -469,7 +479,7 @@ export const DevelopWorkspace: React.FC<{ onExport: () => void }> = ({ onExport 
             onClick={onExport}
             disabled={isExporting}
             className="flex items-center space-x-1 bg-studio-800 hover:bg-studio-700 text-studio-200 px-2 py-0.5 rounded border border-studio-700 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-            title="导出 JPEG 或 PNG 成品"
+            title={currentDoc.isRaw ? '导出 JPEG、PNG 或 TIFF 成品' : '导出 JPEG 或 PNG 成品'}
           >
             <Download className="w-3 h-3 text-blue-400" />
             <span>导出成品…</span>
@@ -954,6 +964,27 @@ export const DevelopWorkspace: React.FC<{ onExport: () => void }> = ({ onExport 
               icon={<Disc className="w-3.5 h-3.5 text-cyan-400" />}
               onResetSection={() => resetSection(currentDoc.id, 'optics')}
             >
+                {currentDoc.isRaw && (
+                  <div className="flex items-center justify-between gap-2 pb-2 text-[11px] text-studio-400">
+                    <span>{(currentDoc.rawProcessingVersion ?? 1) === 1 ? '旧版 RAW 管线' : currentDoc.rawCorrectionMode === 'uncorrected' ? '未校正 · 32 位浮点' : '相机校正 · 32 位浮点'}</span>
+                    <div className="flex gap-1">
+                      <button type="button" className="studio-btn-icon" title="新建未校正副本" aria-label="新建未校正副本"
+                        disabled={isCreatingRawVariant || rawState !== 'ready' || currentDoc.rawCorrectionMode === 'uncorrected' || !!settings.masks.length}
+                        onClick={() => void handleRawVariant('uncorrected')}><EyeOff size={14} /></button>
+                      <button type="button" className="studio-btn-icon" title="新建浮点校正副本" aria-label="新建浮点校正副本"
+                        disabled={isCreatingRawVariant || rawState !== 'ready' || ((currentDoc.rawProcessingVersion ?? 1) === 2 && currentDoc.rawCorrectionMode !== 'uncorrected') || !!settings.masks.length}
+                        onClick={() => void handleRawVariant('camera')}><Focus size={14} /></button>
+                    </div>
+                  </div>
+                )}
+                {currentDoc.exif?.opticalCorrection && (
+                  <div className="flex flex-wrap gap-x-3 gap-y-1 pb-2 text-[11px] text-studio-400">
+                    {currentDoc.exif.opticalCorrection.distortion_applied && <span>畸变已校正</span>}
+                    {currentDoc.exif.opticalCorrection.aberration_applied && <span>色差已校正</span>}
+                    {currentDoc.exif.opticalCorrection.shading_applied && <span>镜头暗角已校正</span>}
+                    {currentDoc.exif.opticalCorrection.provenance === 'camera-active-area-only' && <span>无可用镜头标定</span>}
+                  </div>
+                )}
               <div className="space-y-1">
                 <ScrubbableInput
                   param={PARAM_DEFINITIONS.vignetteAmount}

@@ -1,4 +1,5 @@
 import { inflateSync } from 'node:zlib';
+import { assertSrgbProfile } from './icc.mjs';
 
 function crc32(bytes) {
   let crc = 0xffffffff;
@@ -40,8 +41,13 @@ export function decodePng(buffer) {
     } else if (name === 'IEND') {
       if (length || !dataStarted || end !== buffer.length) throw new Error('Invalid PNG IEND');
       ended = true; break;
-    } else if (name === 'iCCP' || name === 'cICP') {
-      throw new Error('Embedded color profile unsupported; export declared sRGB without ICC/cICP for this validator');
+    } else if (name === 'iCCP') {
+      const separator=body.indexOf(0);
+      if(metadata.includes('iCCP') || dataStarted || separator<1 || separator>79 || body[separator+1]!==0) throw new Error('Invalid embedded color profile');
+      assertSrgbProfile(inflateSync(body.subarray(separator+2),{maxOutputLength:1024*1024}));
+      metadata.push(name);
+    } else if (name === 'cICP') {
+      throw new Error('Embedded color profile unsupported: cICP requires explicit conversion');
     } else if (name === 'tRNS') {
       throw new Error('PNG transparency key unsupported; export opaque RGB/RGBA');
     } else if (name === 'acTL') {

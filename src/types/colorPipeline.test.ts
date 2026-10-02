@@ -1,6 +1,11 @@
 import { expect, it } from 'vitest';
 import { createDevelopDocument } from '../document/DevelopDocument';
 import { createColorPipelineState } from './colorPipeline';
+it('describes a calibrated float working source without display encoding',()=>{
+ expect(createColorPipelineState({isRaw:true,isWorkingLinear:true})).toMatchObject({
+  colorState:'working-linear',whiteBalanceApplied:true,cameraMatrixApplied:true,
+  transferFunctionApplied:false,toneMappingApplied:false,colorSpace:'linear-srgb'});
+});
 it('ready native RAW documents describe their DOM preview rather than claiming sensor RGB',()=>{
  const doc=createDevelopDocument({sourceUri:'sample.raw',fileName:'sample.raw',isRaw:true,rawEngineAttached:true,rawState:'ready',sourceAssetId:'decoded-preview'});
  expect(doc.pipelineState?.colorState).toBe('display-encoded');expect(doc.pipelineState?.whiteBalanceApplied).toBe(true);

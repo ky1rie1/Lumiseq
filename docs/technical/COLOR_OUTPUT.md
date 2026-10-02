@@ -1,5 +1,7 @@
 # Native export color audit — 2026-09-29
 
+> Historical audit for the published integer pipeline. The 2026-10-02 development candidate adds pre-matrix float working pixels, PNG/TIFF ICC output and Display P3. See [current RAW quality](../RAW_QUALITY.md). The limitations and counts below describe the older implementation.
+
 ## Changes and delivered pixel contract
 
 Native exports previously stored sRGB encoded pixels without a color profile declaration. Color managed receivers could therefore guess the wrong source space. The export pixel math and camera decoding parameters remain the same; the delivery files now declare the encoding they actually contain.

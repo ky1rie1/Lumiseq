@@ -27,6 +27,25 @@ async function pixels(data: string) {
   canvas.getContext('2d').drawImage(image, 0, 0);
   return [...canvas.getContext('2d').getImageData(0, 0, image.width, image.height).data];
 }
+it('preserves native sub-display shadows in AI overview and exact detail observations', async () => {
+  const create=installObservationCanvas(),assets=new AssetManager(),documents=new DocumentManager();
+  const source=create(4,2);source.getContext('2d')!.fillRect(0,0,4,2);
+  const blob=await new Promise<Blob>(resolve=>source.toBlob(b=>resolve(b!),'image/png'));
+  const asset=await assets.registerBlob(blob,'image','black preview',{width:4,height:2});
+  const linear={width:4,height:2,data:new Uint16Array(Array.from({length:8},()=>[10,10,10,65535]).flat())};
+  const bridge={getRawLinearPreview:vi.fn(async()=>linear),getRawLinearTile:vi.fn(async()=>linear),
+    getRawDisplayTile:vi.fn(async()=>new Uint8Array(await blob.arrayBuffer()))};
+  const doc=createDevelopDocument({sourceUri:'shadow.arw',fileName:'shadow.arw',width:4,height:2,isRaw:true,rawState:'ready',rawEngineAttached:true,previewAssetId:asset.id});
+  doc.nativeAssetId='native-shadow';doc.settings.exposure=8;documents.openDocument(doc);
+  const service=new DocumentObservationService({documents,assets,renderer:createDocumentObservationRenderer({assets,bridge,createCanvas:create})});
+  const overview=await service.observe({documentId:doc.id,mode:'overview'});
+  expect((await pixels(overview.image.data))[0]).toBeGreaterThanOrEqual(55);
+  const detail=await service.observe({documentId:doc.id,mode:'detail',region:{x:0,y:0,width:4,height:2}});
+  expect((await pixels(detail.image.data)).slice(0,4)).toEqual([56,56,56,255]);
+  expect(bridge.getRawLinearPreview).toHaveBeenCalledWith('native-shadow');
+  expect(bridge.getRawLinearTile).toHaveBeenCalledWith('native-shadow',0,0,4,2);
+  expect(assets.listAssets()).toHaveLength(1);service.dispose();
+});
 it('renders exact nested Edit crop/adjustment pixels through the production engine on a separate surface', async () => {
   const create = installPixelCanvas(), assets = new AssetManager(), documents = new DocumentManager();
   const source = create(4, 1), ctx = source.getContext('2d')!;

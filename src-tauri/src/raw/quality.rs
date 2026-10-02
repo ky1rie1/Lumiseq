@@ -1,5 +1,5 @@
 use super::develop::{base_tone_pixel, NativeDevelopSettings};
-use super::types::{PixelFormat, RawError};
+use super::types::RawError;
 use super::{haze, wavelet};
 use crate::assets::global_asset_registry;
 use serde::{Deserialize, Serialize};
@@ -84,17 +84,7 @@ pub fn analyze_raw_spatial(
         .with_asset(asset_id, |asset| {
             let width = asset.width;
             let height = asset.height;
-            if width == 0
-                || height == 0
-                || asset.pixel_format != PixelFormat::RGBA16
-                || width.checked_mul(height).is_none_or(|n| n > 150_000_000)
-                || width.checked_mul(height).and_then(|n| n.checked_mul(8))
-                    != Some(asset.buffer.len())
-            {
-                return Err(RawError::DecodeFailed(
-                    "Invalid RGBA16 RAW analysis source".into(),
-                ));
-            }
+            let source=super::linear_source::LinearSource::new(asset)?;
             let scale = (256.0 / width.max(height) as f32).min(1.0);
             let gw = (width as f32 * scale).round().max(1.0) as usize;
             let gh = (height as f32 * scale).round().max(1.0) as usize;
@@ -107,7 +97,7 @@ pub fn analyze_raw_spatial(
                         for sx in 0..4 {
                             let x = ((column * 8 + sx * 2 + 1) * width / (gw * 8)).min(width - 1);
                             let y = ((row * 8 + sy * 2 + 1) * height / (gh * 8)).min(height - 1);
-                            let v = base_tone_pixel(&asset.buffer, y * width + x, s, matrix, gain);
+                            let v = base_tone_pixel(&source, y * width + x, s, matrix, gain)?;
                             for c in 0..3 {
                                 sum[c] += v[c] / 16.0;
                             }
@@ -127,12 +117,12 @@ pub fn analyze_raw_spatial(
                     for y in y0..y0 + ph {
                         for x in x0..x0 + pw {
                             patch.push(base_tone_pixel(
-                                &asset.buffer,
+                                &source,
                                 y * width + x,
                                 s,
                                 matrix,
                                 gain,
-                            ));
+                            )?);
                         }
                     }
                     patches.push((pw, ph, patch));

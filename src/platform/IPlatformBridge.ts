@@ -26,6 +26,13 @@ export interface SelectedFile {
 }
 
 export interface NativeRawMetadata {
+  processing_version?: 1 | 2;
+  optical_correction?: {
+    mode: 'camera' | 'uncorrected';
+    provenance: 'sony-embedded-tables' | 'camera-active-area-only';
+    source_width:number; source_height:number; active_crop:[number,number,number,number];
+    distortion_applied:boolean; aberration_applied:boolean; shading_applied:boolean;
+  };
   camera_make: string;
   camera_model: string;
   lens_model?: string;
@@ -124,10 +131,14 @@ export interface IPlatformBridge {
   extractRawThumbnail(filePath: string): Promise<Uint8Array | null>;
 
   /** Stage 3: Full background high-precision 16-bit RAW demosaicing and decoding */
-  decodeRawImage(jobId: string, filePath: string, quality?: 'Fast' | 'Balanced' | 'High'): Promise<NativeRawDecodeResult | null>;
+  decodeRawImage(jobId: string, filePath: string, quality?: 'Fast' | 'Balanced' | 'High',processingVersion?:1|2,correctionMode?:'camera'|'uncorrected'): Promise<NativeRawDecodeResult | null>;
 
   /** Lossless-encoded display pixels for a bounded region of the registered RAW. */
   getRawDisplayTile?(assetId: string, x: number, y: number, width: number, height: number): Promise<Uint8Array>;
+
+  /** Bounded high-precision working pixels; exposure is applied before display quantization. */
+  getRawLinearPreview?(assetId: string): Promise<import('./rawLinearPixels').RawLinearPixels>;
+  getRawLinearTile?(assetId: string, x: number, y: number, width: number, height: number): Promise<import('./rawLinearPixels').RawLinearPixels>;
 
   /** Unedited RGBA16 source grid as linear sRGB, at most 16,384 RGB pixels. */
   getRawLinearSample?(assetId: string): Promise<number[][]>;

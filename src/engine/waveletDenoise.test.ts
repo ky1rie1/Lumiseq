@@ -25,6 +25,11 @@ function fieldStats(pixels: Float32Array, width: number, x0: number, x1: number,
 }
 
 describe('opponent wavelet denoise', () => {
+  it('preserves a signed constant gamut field under active denoising',()=>{
+    const pixels=Float32Array.from(Array.from({length:9*7},()=>[-.125,1.5,.000001]).flat());
+    const result=waveletDenoise(pixels,9,7,50,50,[.01,.01,.01]);
+    result.forEach((value,i)=>expect(value).toBeCloseTo(pixels[i],6));
+  });
   it('returns the exact input when both controls or all noise estimates are zero', () => {
     const pixels = Float32Array.from([-.1, .2, .3, .6, .8, 1.2]);
     expect(waveletDenoise(pixels, 2, 1, 0, 0, [.1, .1, .1])).toBe(pixels);

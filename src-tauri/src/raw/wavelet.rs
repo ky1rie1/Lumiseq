@@ -20,6 +20,10 @@ fn nonnegative(value: f32) -> f32 {
         0.0
     }
 }
+
+fn signed_sqrt(value:f32)->f32 {
+    if value.is_finite() {value.signum()*value.abs().sqrt()} else {0.0}
+}
 fn amount(value: f32) -> f32 {
     nonnegative(value).min(100.0) / 100.0
 }
@@ -28,9 +32,9 @@ fn to_opponent(pixels: &[[f32; 3]]) -> Vec<[f32; 3]> {
     pixels
         .iter()
         .map(|p| {
-            let r = nonnegative(p[0]).sqrt();
-            let g = nonnegative(p[1]).sqrt();
-            let b = nonnegative(p[2]).sqrt();
+            let r = signed_sqrt(p[0]);
+            let g = signed_sqrt(p[1]);
+            let b = signed_sqrt(p[2]);
             [0.25 * r + 0.5 * g + 0.25 * b, r - g, b - g]
         })
         .collect()
@@ -157,9 +161,9 @@ pub fn denoise(
         let u = retained[i][1] + current[i][1];
         let v = retained[i][2] + current[i][2];
         let g = y - 0.25 * u - 0.25 * v;
-        let rgb = [(g + u).max(0.0), g.max(0.0), (g + v).max(0.0)];
+        let rgb = [g+u,g,g+v];
         for c in 0..3 {
-            horizontal[i][c] = (rgb[c] * rgb[c]).min(f32::MAX);
+            horizontal[i][c] = rgb[c].signum()*(rgb[c]*rgb[c]).min(f32::MAX);
         }
     }
     horizontal
@@ -168,6 +172,12 @@ pub fn denoise(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn active_denoising_preserves_constant_signed_gamut() {
+        let pixels=vec![[-0.125,1.5,0.000001];9*7];
+        let result=denoise(&pixels,9,7,50.0,50.0,[0.01;3]);
+        for rgb in result {for c in 0..3 {assert!((rgb[c]-pixels[0][c]).abs()<0.000001);}}
+    }
 
     fn noisy_image(width: usize, height: usize, edge: bool) -> Vec<[f32; 3]> {
         let mut state = 0x12345678u32;

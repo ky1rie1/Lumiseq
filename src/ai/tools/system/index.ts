@@ -206,6 +206,10 @@ export class GetDocumentContextTool extends CanonicalTool {
     if (doc.kind === 'develop') {
       const devDoc = context.documentManager.getDevelopDocument(doc.id);
       resultData.developSettings = devDoc?.settings;
+      resultData.rawProcessingVersion = devDoc?.rawProcessingVersion;
+      resultData.rawCorrectionMode = devDoc?.rawCorrectionMode;
+      resultData.colorPipelineState = devDoc?.pipelineState;
+      resultData.opticalCorrection = devDoc?.exif?.opticalCorrection;
     } else {
       const editDoc = context.documentManager.getEditDocument(doc.id);
       resultData.layers = editDoc?.layers.map((l) => ({
@@ -421,12 +425,13 @@ export class ExportImageTool extends CanonicalTool {
   constructor(private readonly operation: Pick<ImageExportService, 'export'> = defaultImageExportService) { super(); }
   readonly schema: CanonicalToolSchema = {
     name: 'system_export_image',
-    description: 'Export the specified open document as a rendered JPEG or PNG. Requires a local absolute output path; project state is unchanged.',
+    description: 'Export JPEG8 or PNG; native RAW also supports ICC-tagged PNG16/TIFF16 in sRGB or Display P3. Requires a local absolute output path; project state is unchanged.',
     workspace: 'any', category: 'system', riskLevel: 'dangerous',
     parameters: { type: 'object', properties: {
       documentId: { type: 'string', description: 'Exact open document ID.' },
-      path: { type: 'string', description: 'Absolute local .jpg/.jpeg or .png output path.' },
-      format: { type: 'string', description: 'Output format.', enum: ['jpeg', 'png'] },
+      path: { type: 'string', description: 'Absolute local .jpg/.jpeg, .png or .tif/.tiff output path.' },
+      format: { type: 'string', description: 'Output format; TIFF requires decoded native RAW.', enum: ['jpeg', 'png', 'tiff'] },
+      outputProfile:{type:'string',description:'Output ICC color space; Display P3 requires decoded native RAW.',enum:['srgb','display-p3']},
       quality: { type: 'integer', description: 'JPEG quality 1–100; default 90.' },
       width: { type: 'integer', description: 'Output width in pixels; default document width.' },
       height: { type: 'integer', description: 'Output height in pixels; default document height.' },
@@ -435,9 +440,10 @@ export class ExportImageTool extends CanonicalTool {
   async execute(context: IToolContext, args: Record<string, any>, toolCallId: string): Promise<ToolResult> {
     const doc = typeof args.documentId === 'string' ? context.documentManager.getDocument(args.documentId) : null;
     if (!doc) return { success: false, toolCallId, renderRequired: false, error: { code: 'NO_DOCUMENT', message: 'Document not found.' } };
-    if (typeof args.path !== 'string' || !['jpeg', 'png'].includes(args.format)) return { success: false, toolCallId, renderRequired: false, error: { code: 'INVALID_ARGUMENT', message: 'A local path and JPEG or PNG format are required.' } };
+    if (typeof args.path !== 'string' || !['jpeg', 'png','tiff'].includes(args.format)) return { success: false, toolCallId, renderRequired: false, error: { code: 'INVALID_ARGUMENT', message: 'A local path and JPEG, PNG or TIFF format are required.' } };
     try {
       await this.operation.export(doc, args.path, { format: args.format,
+        ...(args.outputProfile!==undefined?{outputProfile:args.outputProfile}:{}),
         quality: args.quality ?? 90, width: args.width ?? doc.width, height: args.height ?? doc.height });
       return { success: true, toolCallId, renderRequired: false, data: { path: args.path, format: args.format } };
     } catch (reason) {

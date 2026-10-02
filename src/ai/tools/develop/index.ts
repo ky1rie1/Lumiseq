@@ -60,6 +60,28 @@ async function applyParameter(context: IToolContext, args: Record<string, any>, 
   } catch (cause) { return serviceError(toolCallId, cause); }
 }
 
+export class CreateRawVariantTool extends CanonicalTool {
+  readonly schema: CanonicalToolSchema = {
+    name: 'develop_create_raw_variant',
+    description: 'Create a separate v2 float RAW document with camera correction or uncorrected inspection. Original document stays intact. Rejects local masks because lens coordinates change. Undo closes the variant; redo decodes fresh. Read its rawState before inspecting/exporting.',
+    workspace: 'develop', category: 'develop', riskLevel: 'normal',
+    parameters: { type: 'object', properties: {
+      documentId: { type: 'string', description: 'Explicit RAW document ID.' },
+      mode: { type: 'string', enum: ['camera', 'uncorrected'], description: 'Camera embedded correction or float inspection without distortion/CA/shading; both use the active crop.' },
+    }, required: ['documentId', 'mode'] },
+  };
+  async execute(context: IToolContext, args: Record<string, any>, toolCallId: string): Promise<ToolResult> {
+    if (typeof args.documentId !== 'string' || !args.documentId.trim() || !['camera', 'uncorrected'].includes(args.mode)) {
+      return errorResult(toolCallId, 'INVALID_ARGUMENT', 'Explicit documentId and valid correction mode are required');
+    }
+    try {
+      const result = await new DevelopOperationService(context.documentManager, context.commandBus).createRawVariant(args.documentId, args.mode);
+      return { success: true, toolCallId, commandId: result.commandId, changedDocumentId: result.documentId,
+        after: { documentId: result.documentId, rawProcessingVersion: 2, rawCorrectionMode: args.mode, rawState: 'unloaded' }, renderRequired: true };
+    } catch (error) { return serviceError(toolCallId, error); }
+  }
+}
+
 export class SetWhiteBalanceTool extends CanonicalTool {
   readonly schema: CanonicalToolSchema = {
     name: 'develop_set_white_balance',

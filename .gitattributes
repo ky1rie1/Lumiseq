@@ -16,6 +16,7 @@
 *.dng binary
 # Preserve upstream source, license text and published numeric fixtures verbatim.
 src-tauri/native/libraw/** -whitespace
+src-tauri/native/gpr/** -whitespace
 public/fonts/OFL-NotoSansSC.txt -whitespace
 licenses/** -whitespace
 tests/fixtures/** -whitespace

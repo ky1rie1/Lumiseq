@@ -32,6 +32,7 @@ import type { StudioDocument } from './types/document';
 import {getStudioPreferences,useStudioPreferences} from './stores/useStudioPreferences';
 import {defaultCommandBus} from './history/CommandBus';
 import {defaultLocalCutoutProvider} from './cutout/LocalCutoutProvider';
+import { RAW_EXTENSIONS } from './router/FileRouter';
 
 export const App: React.FC = () => {
   const currentWorkspace = useAppStore(s => s.currentWorkspace);
@@ -124,7 +125,7 @@ export const App: React.FC = () => {
 
   const handleOpenFileDialog = () => openFile(() => getPlatformBridge().openFileDialog({
     title: `打开照片或项目 · ${APP_NAME}`,
-    filters: [{ name: '照片与项目', extensions: ['cr2','cr3','nef','arw','raf','rw2','orf','dng','pef','srw','raw','jpg','jpeg','png','webp','bmp','tiff','tif','lsq','lumiseq','aistudio','aiimg','psd'] }],
+    filters: [{ name: '照片与项目', extensions: [...RAW_EXTENSIONS,'jpg','jpeg','png','webp','bmp','tiff','tif','lsq','lumiseq','aistudio','aiimg','psd'] }],
   }));
   const handleOpenRecentProject = (path: string) => openFile(() => readSelectedNativeFile(path));
 

@@ -286,7 +286,9 @@ export class TauriPlatformBridge implements IPlatformBridge {
   async decodeRawImage(
     jobId: string,
     filePath: string,
-    quality?: 'Fast' | 'Balanced' | 'High'
+    quality?: 'Fast' | 'Balanced' | 'High',
+    processingVersion?: 1 | 2,
+    correctionMode?: 'camera' | 'uncorrected'
   ): Promise<NativeRawDecodeResult | null> {
     try {
       const { invoke } = await import('@tauri-apps/api/core');
@@ -294,6 +296,8 @@ export class TauriPlatformBridge implements IPlatformBridge {
         jobId,
         path: filePath,
         quality,
+        processingVersion,
+        correctionMode,
       });
     } catch (err) {
       console.warn('Failed to decode RAW image via Tauri IPC:', err);
@@ -326,6 +330,18 @@ export class TauriPlatformBridge implements IPlatformBridge {
     return invoke<number[][]>('get_raw_linear_sample', { assetId });
   }
 
+  async getRawLinearPreview(assetId: string): Promise<import('./rawLinearPixels').RawLinearPixels> {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const { decodeRawLinearPixels } = await import('./rawLinearPixels');
+    return decodeRawLinearPixels(await invoke<ArrayBuffer>('get_raw_linear_preview', { assetId }));
+  }
+
+  async getRawLinearTile(assetId: string, x: number, y: number, width: number, height: number): Promise<import('./rawLinearPixels').RawLinearPixels> {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const { decodeRawLinearPixels } = await import('./rawLinearPixels');
+    return decodeRawLinearPixels(await invoke<ArrayBuffer>('get_raw_linear_tile', { assetId, x, y, width, height }));
+  }
+
   async getRawSpatialAnalysis(assetId: string, settings: import('../app/nativeDevelopPayload').NativeDevelopPayload): Promise<import('../app/rawSpatialAnalysis').RawSpatialAnalysis> {
     const { invoke } = await import('@tauri-apps/api/core');
     return invoke('get_raw_spatial_analysis', { assetId, settings });
@@ -348,6 +364,7 @@ export class TauriPlatformBridge implements IPlatformBridge {
           quality: options.quality,
           width: options.width,
           height: options.height,
+          output_profile: options.outputProfile ?? 'srgb',
         },
         outputPath,
       });

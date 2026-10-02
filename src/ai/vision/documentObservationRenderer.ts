@@ -1,7 +1,7 @@
 import type { IAssetManager } from '../../types/asset';
 import type { IPlatformBridge } from '../../platform/IPlatformBridge';
 import type { DevelopDocument, DevelopSettings } from '../../types/develop';
-import { getPlatformBridge } from '../../platform';
+import { getPlatformBridge, isTauriEnvironment } from '../../platform';
 import { WebGLImageEngine } from '../../engine/WebGLImageEngine';
 import { spatialSourceHalo } from '../../engine/spatialScale';
 import { paddedRawDetailRegion } from '../../ui/workspaces/develop/rawDetailPadding';
@@ -11,7 +11,7 @@ import type { DocumentObservationRenderPort, ObservationGeometry } from './obser
 
 interface Dependencies {
   assets: IAssetManager;
-  bridge?: Pick<IPlatformBridge, 'getRawDisplayTile' | 'getRawSpatialAnalysis'>;
+  bridge?: Pick<IPlatformBridge, 'getRawDisplayTile' | 'getRawSpatialAnalysis' | 'getRawLinearPreview' | 'getRawLinearTile'>;
   createCanvas?: (width: number, height: number) => HTMLCanvasElement;
   engineFactory?: () => WebGLImageEngine;
 }
@@ -71,6 +71,11 @@ export function createDocumentObservationRenderer(deps: Dependencies): DocumentO
             const blob = await deps.assets.getBlob(id);
             if (!blob) throw new Error('Document display asset is unavailable');
             const sourceSize = await engine.loadAsset(id, blob); check(signal);
+            const bridge = deps.bridge ?? getPlatformBridge();
+            if (doc.isRaw && doc.nativeAssetId && bridge.getRawLinearPreview && (deps.bridge || isTauriEnvironment())) {
+              const linear = await bridge.getRawLinearPreview(doc.nativeAssetId); check(signal);
+              engine.setRawLinearSource(id, linear);
+            }
             await engine.renderDevelop(id, settings, output, undefined, {
               spatialAnalysis, spatialSourceSize: { width: doc.width, height: doc.height },
             });
@@ -116,6 +121,10 @@ export function createDocumentObservationRenderer(deps: Dependencies): DocumentO
                 const rendered = surface(read.width, read.height);
                 try {
                   const decoded = await engine.loadAsset(asset.id, blob); check(signal);
+                  if (doc.isRaw && bridge.getRawLinearTile) {
+                    const linear = await bridge.getRawLinearTile(doc.nativeAssetId!, read.x, read.y, read.width, read.height); check(signal);
+                    engine.setRawLinearSource(asset.id, linear);
+                  }
                   if (decoded.width !== read.width || decoded.height !== read.height) throw new Error('Observation source tile dimensions do not match requested native pixels');
                   await engine.renderDevelop(asset.id, settings, rendered, undefined, { spatialAnalysis,
                     sourceRect: { ...read, sourceWidth: doc.width, sourceHeight: doc.height } });

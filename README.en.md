@@ -30,7 +30,7 @@ The [release page](https://github.com/ky1rie1/Lumiseq/releases/latest) includes 
 
 ### RAW development
 
-LibRaw camera decoding, exposure, white balance, HSL, curves and local adjustments, plus full-image dehazing, wavelet denoising and sharpening. Export at the original resolution as PNG16 or JPEG8.
+LibRaw camera decoding, exposure, white balance, HSL, curves and local adjustments, plus full-image dehazing, wavelet denoising and sharpening. The development candidate preserves float working data and adds original-size PNG16/TIFF16, sRGB/Display P3 and embedded Sony lens corrections. JPEG remains 8-bit.
 
 Presets, snapshots and module-based parameter copying support editing a series of photos. Curve points accept numeric input and arrow-key adjustments; a continuous drag produces one undo entry. Keep the original camera file available when reopening a RAW project.
 
@@ -67,7 +67,8 @@ RAW parameters, layers and masks are project data. The AI harness supplies opera
 
 ## Known limitations
 
-- RAW PNG output is 16-bit sRGB; image-editing Canvas exports are 8-bit. Custom camera DCP/ICC profiles, wide-gamut scene spaces, print soft proofing and camera/ISO noise calibration are not supported yet.
+- See [RAW camera compatibility](docs/RAW_COMPATIBILITY.md) for tested models and unsupported compression variants. Recognizing an extension does not establish universal camera support.
+- The new RAW pipeline uses extended linear sRGB float pixels and PNG/TIFF16 delivery; image-editing Canvas exports remain 8-bit. Custom camera DCP/ICC profiles, floating sensor DNG, print soft proofing and camera/ISO noise calibration remain unsupported. Adobe rendering equivalence is not claimed.
 - Color validation compares two public Nikon Z7 samples against RawTherapee renders. It does not establish calibrated physical chart accuracy. See [methods and data](docs/technical/COLOR_PARITY.md).
 - Hair, glass, motion blur and complex backgrounds may need manual cutout refinement. PSD support also has explicit compatibility limits.
 - Agent image support depends on the client and model. A successful connection probe does not verify real-model visual understanding. Vision fallback services follow the configured image-upload permissions.

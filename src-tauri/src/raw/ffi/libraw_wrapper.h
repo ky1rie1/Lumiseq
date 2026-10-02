@@ -5,9 +5,20 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// Wrapper-specific unsupported Nikon HE codec; never confused with corrupt data.
+#define LUMISEQ_NIKON_HE_UNSUPPORTED (-200001)
+#define LUMISEQ_FLOAT_RAW_UNSUPPORTED (-200002)
+
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+typedef struct {
+    uint32_t crop[4];
+    int16_t distortion[17];
+    int16_t aberration[33];
+    int16_t shading[17];
+} LibRawOptics;
 
 typedef struct {
     char make[64];
@@ -29,6 +40,7 @@ typedef struct {
     uint32_t thumb_width;
     uint32_t thumb_height;
     int error_code;
+    LibRawOptics optics;
 } LibRawMetaResult;
 
 typedef struct {
@@ -42,6 +54,13 @@ typedef struct {
 } LibRawDecodedImage;
 
 typedef struct {
+    float normalization;
+    float multipliers[4];
+    float matrix[3][4];
+    LibRawOptics optics;
+} LibRawSceneCalibration;
+
+typedef struct {
     size_t data_size;
     uint8_t* data;
     int is_jpeg;
@@ -53,6 +72,7 @@ int libraw_wrapper_extract_thumbnail(const char* file_path, LibRawThumbResult* o
 void libraw_wrapper_free_thumb(LibRawThumbResult* thumb);
 
 int libraw_wrapper_decode_16bit(const char* file_path, int demosaic_quality, LibRawDecodedImage* out_image);
+int libraw_wrapper_decode_scene(const char* file_path, int demosaic_quality, LibRawDecodedImage* out_image, LibRawSceneCalibration* calibration);
 void libraw_wrapper_free_image(LibRawDecodedImage* image);
 
 #ifdef __cplusplus

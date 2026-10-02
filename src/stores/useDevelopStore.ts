@@ -291,7 +291,8 @@ export const useDevelopStore = create<DevelopState>((set, get) => ({
           : undefined }, 'Update RAW Metadata');
       }
       // Stage 2: Fast embedded JPEG preview extraction
-      const thumbBytes = await bridge.extractRawThumbnail(sourceUri);
+      // A bitmap-only/missing thumbnail must not prevent sensor decoding.
+      const thumbBytes = await bridge.extractRawThumbnail(sourceUri).catch(() => null);
       if (!isCurrent()) return;
       if (thumbBytes && thumbBytes.length > 0) {
         const thumbBlob = new Blob([thumbBytes as unknown as BlobPart], { type: 'image/jpeg' });
@@ -304,17 +305,19 @@ export const useDevelopStore = create<DevelopState>((set, get) => ({
           rawState: 'embedded-preview', rawProgress: 50 }, 'Display Embedded Preview')) return;
         publishedBrowserAssets.add(handle.id);
       }
-      // Stage 3: Background full 16-bit RAW demosaic
+      // Stage 3: Background sensor demosaic into the versioned working source.
       if (!publish({ nativeAssetId: null, rawState: 'decoding', rawProgress: 70 }, 'Decoding RAW Sensor Data')) return;
       if (!isCurrent()) return;
       decodePending = true;
       let decodeResult;
-      try { decodeResult = await bridge.decodeRawImage(jobId, sourceUri, 'Balanced'); }
+      const processingVersion=doc.rawProcessingVersion ?? 1;
+      try { decodeResult = await bridge.decodeRawImage(jobId, sourceUri,processingVersion===2?'High':'Balanced',processingVersion,doc.rawCorrectionMode ?? 'camera'); }
       finally { decodePending = false; }
       ownedNativeId = decodeResult?.asset_id ?? null;
       if (!isCurrent()) return;
       if (decodeResult) {
         const runtime: DevelopRuntimePatch = { nativeAssetId: decodeResult.asset_id,
+          exif:{...defaultDocumentManager.getDevelopDocument(docId)?.exif,opticalCorrection:decodeResult.metadata?.optical_correction},
           width: decodeResult.width, height: decodeResult.height, rawState: 'ready',
           rawProgress: 100, rawEngineAttached: true, activeJobId: null };
         if (decodeResult.preview_png_bytes && decodeResult.preview_png_bytes.length > 0) {
@@ -324,10 +327,16 @@ export const useDevelopStore = create<DevelopState>((set, get) => ({
           if (!isCurrent()) return;
           await defaultImageEngine.loadAsset(handle.id, previewBlob);
           if (!isCurrent()) return;
+          if (bridge.getRawLinearPreview) {
+            const linear = await bridge.getRawLinearPreview(decodeResult.asset_id);
+            if (!isCurrent()) return;
+            defaultImageEngine.setRawLinearSource(handle.id, linear);
+          }
           runtime.sourceAssetId = handle.id;
           runtime.previewAssetId = handle.id;
-          // This browser source is an 8-bit sRGB PNG. Native RGBA16 stays in its own registry.
-          runtime.pipelineState = createColorPipelineState({ isRaw: true, isDisplayEncoded: true });
+          // Display PNG is retained for raster consumers; Develop uses attached native linear pixels.
+          runtime.pipelineState = createColorPipelineState({ isRaw: true,
+            isWorkingLinear:!!bridge.getRawLinearPreview,isDisplayEncoded:!bridge.getRawLinearPreview });
         }
         if (publish(runtime, 'RAW Decode Complete') && runtime.sourceAssetId) publishedBrowserAssets.add(runtime.sourceAssetId);
       } else throw new Error('RAW decoder did not return an image.');

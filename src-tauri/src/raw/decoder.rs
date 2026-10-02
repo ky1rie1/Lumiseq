@@ -1,10 +1,8 @@
 // src-tauri/src/raw/decoder.rs
 use crate::assets::{global_asset_registry, NativeImageAsset};
-use crate::color::display::ColorPipeline;
 use crate::raw::ffi::SafeRawDecoder;
 use crate::raw::types::{DemosaicQuality, RawDecodeResult, RawError};
 use std::collections::HashSet;
-use std::io::Cursor;
 use std::sync::{OnceLock, RwLock};
 
 fn cancelled_jobs() -> &'static RwLock<HashSet<String>> {
@@ -36,6 +34,16 @@ pub fn decode_raw(
     file_path: &str,
     quality: DemosaicQuality,
 ) -> Result<RawDecodeResult, RawError> {
+    decode_raw_versioned(job_id,file_path,quality,2)
+}
+
+pub fn decode_raw_versioned(job_id:&str,file_path:&str,quality:DemosaicQuality,processing_version:u8)->Result<RawDecodeResult,RawError> {
+    decode_raw_with_options(job_id,file_path,quality,processing_version,super::types::RawCorrectionMode::Camera)
+}
+
+pub fn decode_raw_with_options(job_id:&str,file_path:&str,quality:DemosaicQuality,processing_version:u8,correction_mode:super::types::RawCorrectionMode)->Result<RawDecodeResult,RawError> {
+    if !matches!(processing_version,1|2) {return Err(RawError::DecodeFailed("Unsupported RAW processing version".into()));}
+    if processing_version==1 && correction_mode!=super::types::RawCorrectionMode::Camera {return Err(RawError::DecodeFailed("Uncorrected inspection requires RAW processing version 2".into()));}
     if DecodeJobTracker::is_cancelled(job_id) {
         DecodeJobTracker::cleanup_job(job_id);
         return Err(RawError::Cancelled);
@@ -43,7 +51,7 @@ pub fn decode_raw(
 
     // 1. Run safe isolated FFI decode
     let decoder = SafeRawDecoder::new(file_path);
-    let (width, height, pixel_format, buffer16, metadata) = decoder.decode(quality)?;
+    let (width, height, pixel_format, buffer, metadata) = if processing_version==1 {decoder.decode(quality)?} else {decoder.decode_scene_with_mode(quality,correction_mode)?};
 
     if DecodeJobTracker::is_cancelled(job_id) {
         DecodeJobTracker::cleanup_job(job_id);
@@ -58,36 +66,15 @@ pub fn decode_raw(
         width,
         height,
         pixel_format,
-        buffer: buffer16.clone(),
+        buffer,
         metadata: Some(metadata.clone()),
         ref_count: 1,
         created_at: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64,
     };
 
+    // Bound the preview before display conversion; never duplicate the full float master.
+    let preview_png_bytes = Some(super::detail::display_preview_for_asset(&native_asset)?);
     global_asset_registry().register(native_asset);
-
-    // 3. Generate downsampled 8-bit display preview for fast GPU upload
-    let srgb8 = ColorPipeline::linear16_to_srgb8(&buffer16, width, height);
-
-    // The overview is downsampled, but its encoding must not add JPEG blocks.
-    let mut preview_png_bytes: Option<Vec<u8>> = None;
-    if let Some(img_buffer) = image::RgbaImage::from_raw(width as u32, height as u32, srgb8) {
-        // Downsample preview to at most 2048px on longest edge for smooth UI
-        let max_dim = 2048;
-        let (pw, ph) = if width > max_dim || height > max_dim {
-            let ratio = (max_dim as f32) / (width.max(height) as f32);
-            ((width as f32 * ratio) as u32, (height as f32 * ratio) as u32)
-        } else {
-            (width as u32, height as u32)
-        };
-
-        let resized = image::imageops::resize(&img_buffer, pw, ph, image::imageops::FilterType::Triangle);
-        let mut png_bytes = Vec::new();
-        let mut cursor = Cursor::new(&mut png_bytes);
-        if image::DynamicImage::ImageRgba8(resized).write_to(&mut cursor, image::ImageFormat::Png).is_ok() {
-            preview_png_bytes = Some(png_bytes);
-        }
-    }
 
     DecodeJobTracker::cleanup_job(job_id);
 

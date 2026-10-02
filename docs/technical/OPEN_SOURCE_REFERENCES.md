@@ -20,7 +20,7 @@ Lumiseq 学习公开编辑器的交互组织与算法方法，原创应用代码
 - 智能对象滤镜保留参数、原始资源、撤销链与 AI 工具入口。
 - 图层操作参考 [Pinta 的图层动作](https://github.com/PintaProject/Pinta/blob/master/Pinta.Core/Actions/LayerActions.cs) 的独立命令组织；递归树、祖先锁定和世界坐标几何由本项目实现。
 
-RAW 参数复用的设计参考 [darktable history stack](https://docs.darktable.org/usermanual/4.2/en/module-reference/utility-modules/lighttable/history-stack/) 的模块选择及白平衡默认排除。Lumiseq 使用自身事务与目标照片资源解析，保留原有撤销及相机数据边界。曲线控件与这些流程的设计见 [交互设计](UI_EDITOR_RAW_UPGRADE_DESIGN.md)。
+RAW 参数复用的设计参考 [darktable history stack](https://docs.darktable.org/usermanual/4.2/en/module-reference/utility-modules/lighttable/history-stack/) 的模块选择及白平衡默认排除。Lumiseq 使用自身事务与目标照片资源解析，保留原有撤销及相机数据边界。实现所在的模块见 [架构说明](../ARCHITECTURE.md)。
 
 ## 授权原则
 

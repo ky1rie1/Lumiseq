@@ -19,13 +19,25 @@ for (const file of files) {
     if (!target) continue;
     links++;
     const location = path.resolve(path.dirname(file), target);
-    try { await stat(location); }
+    try {
+      const metadata = await stat(location);
+      const relative = path.relative(root, location).split(path.sep).join('/');
+      const published = metadata.isDirectory()
+        ? [...publishable].some(entry => entry.startsWith(relative ? `${relative}/` : ''))
+        : publishable.has(relative);
+      if (!published) failures.push(`${path.relative(root, file)}: link target excluded from source ${href}`);
+    }
     catch { failures.push(`${path.relative(root, file)}: missing link target ${href}`); }
   }
   for (const match of markdown.matchAll(/<img\s[^>]*src="([^"]+)"/g)) {
     if (/^[a-z][a-z\d+.-]*:/i.test(match[1])) continue;
     links++;
-    try { await stat(path.resolve(path.dirname(file), match[1])); }
+    try {
+      const location = path.resolve(path.dirname(file), match[1]);
+      await stat(location);
+      const relative = path.relative(root, location).split(path.sep).join('/');
+      if (!publishable.has(relative)) failures.push(`${path.relative(root, file)}: image excluded from source ${match[1]}`);
+    }
     catch { failures.push(`${path.relative(root, file)}: missing image ${match[1]}`); }
   }
 }

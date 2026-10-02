@@ -1,6 +1,12 @@
 # Changelog
 
-## 0.9.6 — 2026-10-02
+## 0.9.7 — 2026-10-02
+
+- Explicitly bundle the x64 WebView2 Loader at the installation root. The unpublished 0.9.6 installer candidate omitted it despite containing the Runtime bootstrapper.
+- Installer preparation validates its resource map against an explicit four-file allowlist, including source locations and root destinations. Missing, nested, duplicate or unapproved resources fail before bundling.
+- Recommended downloads are the complete Windows installer and portable ZIP. The installer provisions a missing Runtime with Microsoft's bootstrapper; the portable ZIP needs an existing Runtime.
+
+## 0.9.6 — 2026-10-02 · Unreleased packaging candidate
 
 - Windows GNU releases include the architecture-matched `WebView2Loader.dll` beside the executable. Installing WebView2 Runtime alone does not provide this application dependency.
 - Release preparation rejects incomplete or mismatched native files and unexpected non-system DLL imports. It creates a portable ZIP from an explicit six-file allowlist, excluding build history, credentials and caches.

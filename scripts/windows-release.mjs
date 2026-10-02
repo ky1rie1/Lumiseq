@@ -86,6 +86,19 @@ export function verifyWindowsRelease(directory, executableName = 'lumiseq.exe') 
   return { files: [executableName, 'WebView2Loader.dll'], architecture: 'x64', subsystem: executable.subsystem };
 }
 
+export function verifyInstallerResources(resources, configurationDirectory, releaseDirectory) {
+  const required = ['WebView2Loader.dll', 'LICENSE', 'THIRD_PARTY_NOTICES.txt', 'README.txt'];
+  if (!resources || Array.isArray(resources) || typeof resources !== 'object') throw new Error('Installer resources must use an explicit file map.');
+  const entries = Object.entries(resources);
+  for (const name of required) {
+    const matches = entries.filter(([, target]) => target === name);
+    if (matches.length !== 1) throw new Error(`Installer must include ${name} at the installation root exactly once.`);
+    if (resolve(configurationDirectory, matches[0][0]) !== resolve(releaseDirectory, name)) throw new Error(`Installer resource source is not the verified release file: ${name}.`);
+  }
+  if (entries.length !== required.length) throw new Error('Installer contains unapproved resource inputs.');
+  return required;
+}
+
 export function stageWindowsRelease(source, destination, executableName = 'lumiseq.exe') {
   verifyWindowsRelease(source);
   if (basename(executableName) !== executableName || !executableName.endsWith('.exe')) throw new Error('Invalid executable filename.');
@@ -100,8 +113,14 @@ export function stageWindowsRelease(source, destination, executableName = 'lumis
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const [command, source, destination, executableName] = process.argv.slice(2);
-    if (!source || !['verify', 'stage'].includes(command) || (command === 'stage' && !destination)) throw new Error('Usage: windows-release.mjs verify <directory> [exe-name] | stage <source> <destination> [exe-name]');
-    const result = command === 'stage' ? stageWindowsRelease(source, destination, executableName) : verifyWindowsRelease(source, destination);
-    console.log(`Windows release verified: ${result.architecture}, GUI subsystem ${result.subsystem}, ${result.files.join(' + ')}.`);
+    if (!source || !['verify', 'stage', 'resources'].includes(command) || (['stage', 'resources'].includes(command) && !destination)) throw new Error('Usage: windows-release.mjs verify <directory> [exe-name] | stage <source> <destination> [exe-name] | resources <release-config> <release-directory>');
+    if (command === 'resources') {
+      const config = JSON.parse(readFileSync(source, 'utf8'));
+      const files = verifyInstallerResources(config.bundle?.resources, resolve(source, '..'), destination);
+      console.log(`Installer resources verified: ${files.join(', ')}.`);
+    } else {
+      const result = command === 'stage' ? stageWindowsRelease(source, destination, executableName) : verifyWindowsRelease(source, destination);
+      console.log(`Windows release verified: ${result.architecture}, GUI subsystem ${result.subsystem}, ${result.files.join(' + ')}.`);
+    }
   } catch (error) { console.error(error.message); process.exitCode = 1; }
 }

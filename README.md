@@ -9,16 +9,16 @@
 [下载与安装](#下载与安装) · [功能](#功能) · [架构](#架构) · [使用文档](docs/README.md) · [更新记录](CHANGELOG.md)
 
 <img alt="Windows x64" src="https://img.shields.io/badge/Windows-x64-30363d?style=flat-square" />
-<a href="https://github.com/ky1rie1/Lumiseq/releases/tag/v0.9.6"><img alt="Version 0.9.6" src="https://img.shields.io/badge/version-0.9.6-58666d?style=flat-square" /></a>
+<a href="https://github.com/ky1rie1/Lumiseq/releases/tag/v0.9.7"><img alt="Version 0.9.7" src="https://img.shields.io/badge/version-0.9.7-58666d?style=flat-square" /></a>
 <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-30363d?style=flat-square" /></a>
 
 </div>
 
 ## 下载与安装
 
-[**下载 Lumiseq 0.9.6 · Windows x64**](https://github.com/ky1rie1/Lumiseq/releases/tag/v0.9.6)
+[**下载 Lumiseq 0.9.7 · Windows x64**](https://github.com/ky1rie1/Lumiseq/releases/tag/v0.9.7)
 
-推荐下载 `Lumiseq-0.9.6-windows-x64-setup.exe`：安装包包含应用所需 DLL，并检测 WebView2 Runtime；缺失时调用微软引导程序安装，首次配置 Runtime 需要联网。无需 Node.js 或 Rust。
+推荐下载 `Lumiseq-0.9.7-windows-x64-setup.exe`：安装包包含应用所需 DLL，并检测 WebView2 Runtime；缺失时调用微软引导程序安装，首次配置 Runtime 需要联网。无需 Node.js 或 Rust。
 
 已有 [WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/#download-section) 时，也可使用便携 ZIP。**完整解压后**运行 `lumiseq.exe`，保留同目录的 `WebView2Loader.dll`。
 

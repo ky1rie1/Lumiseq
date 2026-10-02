@@ -54,6 +54,8 @@ Use the Tauri release path so the frontend is embedded with the correct custom p
 
 `package-installer.ps1` verifies the staged EXE/Loader against the native build, uses `src-tauri/tauri.release.conf.json` to create an NSIS installer, and refreshes final checksums. The release-only overlay embeds Microsoft's WebView2 bootstrapper, installs for the current user, and includes only explicitly listed license/instruction resources. Provisioning an absent Runtime needs internet; the full offline Runtime is not bundled.
 
+The resource map explicitly places the GNU build's Loader at the installation root. The pre-bundle gate requires this mapping and validates the four approved sources and destinations; a working portable package alone does not prove the installer includes its DLL.
+
 Tauri stamps installer-type metadata into the executable bundled by NSIS. The script restores the original portable input afterward, so installed and portable EXE hashes can differ while their application version and source match.
 
 ## Brand assets

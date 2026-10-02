@@ -10,6 +10,8 @@ $releaseDirectory = Join-Path $repoRoot 'artifacts\windows'
 $nativeDirectory = Join-Path $env:CARGO_TARGET_DIR 'release'
 & node (Join-Path $PSScriptRoot 'windows-release.mjs') verify $releaseDirectory
 if ($LASTEXITCODE -ne 0) { throw 'Prepare the complete release before creating the installer.' }
+& node (Join-Path $PSScriptRoot 'windows-release.mjs') resources (Join-Path $repoRoot 'src-tauri\tauri.release.conf.json') $releaseDirectory
+if ($LASTEXITCODE -ne 0) { throw 'Installer resource validation failed.' }
 foreach ($name in @('lumiseq.exe', 'WebView2Loader.dll')) {
     $built = Join-Path $nativeDirectory $name
     $staged = Join-Path $releaseDirectory $name

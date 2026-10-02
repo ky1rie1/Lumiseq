@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { readPeMetadata, verifyWindowsRelease, stageWindowsRelease } from '../scripts/windows-release.mjs';
+import { readPeMetadata, verifyWindowsRelease, stageWindowsRelease, verifyInstallerResources } from '../scripts/windows-release.mjs';
 
 function pe({ machine = 0x8664, dll = false, subsystem = 2, imports = [] } = {}) {
   const data = Buffer.alloc(0x600);
@@ -40,6 +40,22 @@ function temporary(run) {
 }
 
 describe('Windows release dependency gate', () => {
+  it('rejects installer resources that omit the application Loader', () => {
+    const resources = {
+      '../artifacts/windows/LICENSE': 'LICENSE',
+      '../artifacts/windows/THIRD_PARTY_NOTICES.txt': 'THIRD_PARTY_NOTICES.txt',
+      '../artifacts/windows/README.txt': 'README.txt',
+    };
+    expect(() => verifyInstallerResources(resources, '/checkout/src-tauri', '/checkout/artifacts/windows')).toThrow(/WebView2Loader.dll/);
+  });
+  it('requires the Loader at the installation root and only approved resource inputs', () => {
+    const resources = Object.fromEntries(['LICENSE', 'THIRD_PARTY_NOTICES.txt', 'README.txt', 'WebView2Loader.dll'].map(name => [`../artifacts/windows/${name}`, name]));
+    expect(verifyInstallerResources(resources, '/checkout/src-tauri', '/checkout/artifacts/windows')).toHaveLength(4);
+    expect(() => verifyInstallerResources({ ...resources, '../artifacts/windows/WebView2Loader.dll': 'nested/WebView2Loader.dll' }, '/checkout/src-tauri', '/checkout/artifacts/windows')).toThrow(/WebView2Loader.dll/);
+    expect(() => verifyInstallerResources({ ...resources, '../artifacts/windows/builds.json': 'builds.json' }, '/checkout/src-tauri', '/checkout/artifacts/windows')).toThrow(/unapproved/i);
+    const wrongSource = { ...resources }; delete wrongSource['../artifacts/windows/WebView2Loader.dll']; wrongSource['../other/WebView2Loader.dll'] = 'WebView2Loader.dll';
+    expect(() => verifyInstallerResources(wrongSource, '/checkout/src-tauri', '/checkout/artifacts/windows')).toThrow(/source/i);
+  });
   it('reads the native architecture, GUI subsystem and DLL imports', () => {
     expect(readPeMetadata(pe({ imports: ['KERNEL32.dll', 'WebView2Loader.dll'] }))).toEqual({
       machine: 0x8664, subsystem: 2, isDll: false, imports: ['KERNEL32.dll', 'WebView2Loader.dll'],

@@ -4,6 +4,7 @@
     "active": true,
     "targets": ["nsis"],
     "resources": {
+      "../artifacts/windows/WebView2Loader.dll": "WebView2Loader.dll",
       "../artifacts/windows/LICENSE": "LICENSE",
       "../artifacts/windows/THIRD_PARTY_NOTICES.txt": "THIRD_PARTY_NOTICES.txt",
       "../artifacts/windows/README.txt": "README.txt"

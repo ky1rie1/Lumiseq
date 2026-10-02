@@ -61,6 +61,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-installer.ps
 
 `package-installer.ps1` 使用 Tauri 官方 NSIS 模板与嵌入式 WebView2 引导程序，检查原生产物与便携产物哈希一致。安装器按当前用户安装，并将许可证、通知和说明放入安装目录。最终外部校验清单还包括安装包哈希。
 
+GNU 构建必须通过资源映射明确把 `WebView2Loader.dll` 放在安装根目录。打包前检查 Loader、许可、通知与说明四个资源的来源和目标；不要依赖打包器自动发现 GNU 原生依赖。仍须实装验证，不能只检查输入目录。
+
 ## 桌面验收
 
 关闭开发服务器，用发布 EXE 检查：

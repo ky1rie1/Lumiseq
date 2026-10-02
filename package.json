@@ -1,7 +1,7 @@
 {
   "name": "lumiseq",
   "private": true,
-  "version": "0.9.6",
+  "version": "0.9.7",
   "description": "A Windows desktop workspace for RAW development, layered image editing, and AI-assisted creative workflows.",
   "license": "MIT",
   "engines": {

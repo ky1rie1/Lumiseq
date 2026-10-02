@@ -31,7 +31,7 @@ artifacts/windows/*.exe
 artifacts/windows/builds.json
 artifacts/windows/SHA256SUMS.txt
 artifacts/windows/THIRD_PARTY_NOTICES.txt
-models/
+/models/
 *.onnx
 *.pth
 *.pt

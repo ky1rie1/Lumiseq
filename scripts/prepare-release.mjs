@@ -27,6 +27,8 @@ await append('Lumiseq MIT License', path.join(root, 'LICENSE'));
 await append('Component inventory', path.join(root, 'THIRD_PARTY_NOTICES.md'));
 await append('ONNX Runtime and BiRefNet upstream notices', path.join(root, 'licenses', 'model-runtime-notices.txt'));
 await append('Noto Sans SC', path.join(root, 'public', 'fonts', 'OFL-NotoSansSC.txt'));
+await append('README lettering / Manrope', path.join(root, 'licenses', 'OFL-Manrope.txt'));
+await append('README lettering / Caveat', path.join(root, 'licenses', 'OFL-Caveat.txt'));
 for (const file of ['COPYRIGHT', 'LICENSE.CDDL', 'LICENSE.LGPL']) {
   await append(`LibRaw ${file}`, path.join(root, 'src-tauri', 'native', 'libraw', file));
 }

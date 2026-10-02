@@ -1,64 +1,69 @@
-// Outlined lettering keeps the cover identical without embedding a font.
-const wordmark = `<g fill="none" stroke="#e5e7e5" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M0 0V88H54M78 30V64Q78 88 101 88Q124 88 124 64V30M152 88V30M152 45Q155 28 173 28Q192 28 192 48V88M192 45Q197 28 214 28Q234 28 234 48V88M263 30V88M341 34C330 26 303 25 300 43C296 64 344 51 344 72C344 91 313 94 298 82M374 59H426C426 17 373 19 373 58C373 91 405 94 425 81M509 30V114M509 58C509 17 456 19 456 58C456 98 509 98 509 58"/>
-    <path d="M263 9V9.1" stroke-width="6"/>
-  </g>`;
+import { typefaces } from './readme-type.mjs';
+
+function alphabet(name, text) {
+  return [...new Set(text)].map(char => {
+    const glyph = typefaces[name][char];
+    if (!glyph) throw new Error(`Missing README glyph: ${name}/${char}`);
+    return `<path id="${name}-${char.codePointAt(0)}" d="${glyph.path}"/>`;
+  }).join('');
+}
+
+function lettering(name, text, x, y, size, fill, centered = false) {
+  const glyphs = [...text].map(char => {
+    const glyph = typefaces[name][char];
+    if (!glyph) throw new Error(`Missing README glyph: ${name}/${char}`);
+    return { char, ...glyph };
+  });
+  const scale = size / 1000;
+  const width = glyphs.reduce((sum, glyph) => sum + glyph.advance, 0);
+  let cursor = 0;
+  const uses = glyphs.map(glyph => {
+    const use = `<use href="#${name}-${glyph.char.codePointAt(0)}" x="${cursor.toFixed(2)}"/>`;
+    cursor += glyph.advance;
+    return use;
+  }).join('');
+  return `<g fill="${fill}" transform="translate(${centered ? (x - width * scale / 2).toFixed(2) : x} ${y}) scale(${scale})" aria-hidden="true">${uses}</g>`;
+}
 
 export function readmeBanner(markSvg) {
   const mark = markSvg.replace(/<svg[^>]*>/, '').replace(/<\/svg>\s*$/, '');
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="380" viewBox="0 0 1200 380" role="img" aria-labelledby="title desc">
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="320" viewBox="0 0 1200 320" role="img" aria-labelledby="title desc">
   <title id="title">Lumiseq</title>
-  <desc id="desc">The approved flowing L and s signature beside a custom silver line wordmark. Photography, layers and intelligence, on a graphite workspace.</desc>
-  <rect width="1200" height="380" fill="#202224"/>
-  <g transform="translate(219 81) scale(1.75)">${mark}</g>
-  <g transform="translate(442 131) scale(1)">${wordmark}</g>
-  <text x="600" y="302" fill="#b5bdc0" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="27">Photography. Layers. Intelligence.</text>
-  <path d="M88 348H1112" stroke="#42474a"/>
+  <desc id="desc">The silver LS signature, optically aligned with the compact Lumiseq wordmark on graphite. A desktop photo editor.</desc>
+  <defs>${alphabet('manrope', 'LumiseqPhoto editor')}</defs>
+  <rect width="1200" height="320" fill="#202224"/>
+  <g transform="translate(239 45) scale(1.8)">${mark}</g>
+  ${lettering('manrope', 'Lumiseq', 465, 192, 104, '#e5e7e5')}
+  ${lettering('manrope', 'Photo editor', 469, 239, 25, '#aab3b7')}
 </svg>\n`;
 }
 
 export function readmeArchitecture(dark = false) {
   const ink = dark ? '#e5e7e5' : '#24292f';
-  const secondary = dark ? '#a7b0b4' : '#57606a';
-  const line = dark ? '#89979d' : '#6e7e86';
-  const muted = dark ? '#424a50' : '#d0d7de';
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="672" viewBox="0 0 800 672" role="img" aria-labelledby="title desc">
-  <title id="title">Lumiseq shared editing architecture</title>
-  <desc id="desc">Workspace operations and AI or MCP canonical tools converge on CommandBus and DocumentManager. Documents feed rendering, assets and project persistence; native services provide RAW decoding, files and secure storage. AI observation and verification reuse document rendering.</desc>
-  <defs><marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1L7 4L1 7" fill="none" stroke="${line}" stroke-width="1.2"/></marker></defs>
-  <g fill="none" stroke="${line}" stroke-width="1.5" marker-end="url(#arrow)">
-    <path d="M136 94V132Q136 148 152 148H212Q228 148 228 164V190"/>
-    <path d="M400 94V132Q400 148 416 148H552Q568 148 568 164V190"/>
-    <path d="M664 94V132Q664 148 648 148H584Q568 148 568 164V190"/>
-    <path d="M228 239V259Q228 277 246 277H382Q400 277 400 295V307"/>
-    <path d="M568 239V259Q568 277 550 277H418Q400 277 400 295V307"/>
-    <path d="M400 351V395"/>
-    <path d="M400 439V459Q400 477 382 477H154Q136 477 136 495V511"/>
-    <path d="M400 439V511"/>
-    <path d="M400 439V459Q400 477 418 477H646Q664 477 664 495V511"/>
+  const line = dark ? '#a7b0b4' : '#647079';
+  const nodes = [
+    ['Editor', 135, 66, 38], ['AI / Agent', 450, 66, 38], ['MCP', 765, 66, 38],
+    ['Operations', 200, 172, 34], ['Canonical tools', 620, 172, 34],
+    ['CommandBus', 450, 266, 36], ['DocumentManager', 450, 347, 36],
+    ['Render', 165, 444, 34], ['Assets', 450, 444, 34], ['Project', 735, 444, 34],
+    ['Tauri / Rust + LibRaw', 450, 522, 28],
+  ];
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="900" height="550" viewBox="0 0 900 550" role="img" aria-labelledby="title desc">
+  <title id="title">Lumiseq editing architecture</title>
+  <desc id="desc">Editor operations and AI or MCP tools converge on the command bus and document manager. Rendering, assets and project persistence consume document state. Tauri, Rust and LibRaw provide native services. Handwritten labels use outlined Caveat lettering.</desc>
+  <defs>${alphabet('caveat', nodes.map(node => node[0]).join(''))}<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M1 1Q5 3 8 5Q5 7 1 9" fill="none" stroke="${line}" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+  <g fill="none" stroke="${line}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)">
+    <path d="M135 82C132 112 163 118 187 124Q201 130 200 141"/>
+    <path d="M450 82C450 120 559 112 602 125Q621 131 620 141"/>
+    <path d="M765 82C767 119 675 109 640 126Q623 133 622 141"/>
+    <path d="M200 184C200 224 370 199 432 224Q449 229 449 237"/>
+    <path d="M620 184C619 218 505 208 465 224Q452 229 452 237"/>
+    <path d="M450 281Q446 297 450 315"/>
+    <path d="M450 361C448 400 225 376 182 402Q163 408 165 415"/>
+    <path d="M450 361Q453 386 450 415"/>
+    <path d="M450 361C452 400 675 376 718 402Q737 408 735 415"/>
   </g>
-  <g font-family="Arial,Helvetica,sans-serif" text-anchor="middle" fill="${ink}" font-size="30">
-    <text x="136" y="52">Workspace</text>
-    <text x="400" y="52">API / Agent</text>
-    <text x="664" y="52">MCP</text>
-    <text x="228" y="224">Operations</text>
-    <text x="568" y="224">Canonical Tools</text>
-    <text x="400" y="340">CommandBus</text>
-    <text x="400" y="428">DocumentManager</text>
-    <text x="136" y="545">Render</text>
-    <text x="400" y="545">Assets</text>
-    <text x="664" y="545">Project</text>
-    <text x="400" y="622">Tauri / Rust</text>
-  </g>
-  <g font-family="Arial,Helvetica,sans-serif" text-anchor="middle" fill="${secondary}" font-size="21">
-    <text x="136" y="82">React UI</text>
-    <text x="400" y="82">Runtime + harness</text>
-    <text x="664" y="82">AgentBridge</text>
-    <text x="136" y="575">Preview + export</text>
-    <text x="400" y="575">Source resources</text>
-    <text x="664" y="575">Save + recovery</text>
-    <text x="400" y="654">LibRaw · Filesystem · Secure storage</text>
-  </g>
-  <path d="M64 592H736" stroke="${muted}"/>
+  ${nodes.map(([text, x, y, size]) => lettering('caveat', text, x, y, size, ink, true)).join('\n  ')}
+  <path d="M120 478Q450 475 780 478" fill="none" stroke="${line}" stroke-opacity=".45" stroke-linecap="round"/>
 </svg>\n`;
 }

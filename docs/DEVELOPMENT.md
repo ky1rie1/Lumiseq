@@ -59,6 +59,16 @@ npm run brand:generate
 
 Editable geometry lives in `scripts/brand/`. The generator writes the canonical SVG mark, PNG/ICO application icons, README cover and light/dark architecture diagrams. `readme.mjs` owns the cover's outlined lettering and documentation layout; it does not change the application icon. Both README languages share these assets. The accepted deep-gray silver `L+s` design is the source for all generated assets.
 
+README lettering uses Manrope and Caveat as SVG outlines, so GitHub does not need to load fonts. The checked-in glyph data in `scripts/brand/readme-type.mjs` is sufficient for normal asset generation. To regenerate that data, download `Manrope[wght].ttf` and `Caveat[wght].ttf` from Google Fonts revision `9710da1eacb3be272583c3224dcb70f9da6eadbb` (`ofl/manrope/` and `ofl/caveat/`), rename them to `Manrope.ttf` and `Caveat.ttf`, and place them in the ignored `reference-source/fonts/` directory. Then run:
+
+```powershell
+python -m pip install fonttools==4.61.1
+python scripts/generate-readme-lettering.py reference-source/fonts
+npm run brand:generate
+```
+
+The script checks both font files against pinned SHA-256 hashes. Keep the [Manrope](../licenses/OFL-Manrope.txt) and [Caveat](../licenses/OFL-Caveat.txt) license texts with the generated outlines.
+
 ## Workspace cleanup
 
 ```powershell

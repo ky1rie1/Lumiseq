@@ -127,13 +127,22 @@ function Test-Application([string]$Directory,[int]$Port){
   $exe=Join-Path $Directory 'lumiseq.exe'
   if((Get-Item -LiteralPath $exe).VersionInfo.FileVersion -notin @($version,"$version.0")){throw 'Application version mismatch.'}
   $oldPath=$env:PATH;$oldArgs=$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS
+  # Hosted runner processes are elevated. WebView2 deliberately ignores their
+  # environment/HKCU overrides; use its documented HKLM policy in this VM only.
+  # https://learn.microsoft.com/microsoft-edge/webview2/concepts/security
+  $debugPolicy='HKLM:\SOFTWARE\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments'
+  $existing=Get-ItemProperty -LiteralPath $debugPolicy -Name 'lumiseq.exe' -ErrorAction SilentlyContinue
+  if($existing){throw 'Unexpected existing application debugger policy.'}
+  New-Item -Path $debugPolicy -Force | Out-Null
+  New-ItemProperty -LiteralPath $debugPolicy -Name 'lumiseq.exe' -PropertyType String -Value "--remote-debugging-port=$Port --remote-debugging-address=127.0.0.1" | Out-Null
   try{
     $env:PATH="$env:SystemRoot\System32;$env:SystemRoot;$env:SystemRoot\System32\Wbem"
     $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS="--remote-debugging-port=$Port --remote-debugging-address=127.0.0.1"
     $stderr=Join-Path $Directory 'acceptance-stderr.txt'
     $stdout=Join-Path $Directory 'acceptance-stdout.txt'
     $app=Start-Process -FilePath $exe -WorkingDirectory $Directory -WindowStyle Hidden -RedirectStandardError $stderr -RedirectStandardOutput $stdout -PassThru
-  }finally{$env:PATH=$oldPath;$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=$oldArgs}
+  }catch{Remove-ItemProperty -LiteralPath $debugPolicy -Name 'lumiseq.exe';throw}
+  finally{$env:PATH=$oldPath;$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=$oldArgs}
   try{
     & node (Join-Path $PSScriptRoot 'windows-home-probe.mjs') $Port
     if($LASTEXITCODE -ne 0){throw 'Application home page did not become ready.'}
@@ -153,7 +162,10 @@ function Test-Application([string]$Directory,[int]$Port){
     }
     try{$targets=Invoke-RestMethod -Uri "http://127.0.0.1:$Port/json/list" -TimeoutSec 3; $targets | Select-Object type,url,title | ConvertTo-Json -Compress}catch{Write-Output 'Loopback WebView debugger is not available.'}
     throw
-  }finally{if(-not $app.HasExited){Stop-Process -Id $app.Id}}
+  }finally{
+    if(-not $app.HasExited){Stop-Process -Id $app.Id}
+    Remove-ItemProperty -LiteralPath $debugPolicy -Name 'lumiseq.exe'
+  }
 }
 Test-Application $installed 19227
 Test-Application $portable 19228

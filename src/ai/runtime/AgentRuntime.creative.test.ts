@@ -15,12 +15,19 @@ import type { DocumentObservationRenderPort } from '../vision/observationTypes';
 import { AssetManager } from '../../assets/AssetManager';
 import { ProjectSerializer } from '../../project/ProjectSerializer';
 import { RenameLayerCommand } from '../../commands/edit/RenameLayerCommand';
-import { createCanvas } from '@napi-rs/canvas';
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 function fixture() {
-  vi.stubGlobal('document', { createElement: () => createCanvas(100, 80) });
+  // These tests exercise candidate lifecycle, not installed system fonts.
+  // Keep text measurement deterministic; the verifier still checks both bounds.
+  vi.stubGlobal('document', { createElement: () => ({ getContext: () => ({
+    font: '10px Fixture',
+    measureText(text: string) {
+      const fontSize = Number(this.font.match(/([\d.]+)px/)?.[1] ?? 10);
+      return { width: Array.from(text).length * fontSize * 0.5 };
+    },
+  }) }) });
   const documents = new DocumentManager();
   documents.openDocument(createEditDocument({ id: 'poster', width: 100, height: 80, layers: [
     createImageLayer({ id: 'background', name: 'Background', sourceAssetId: 'shared', naturalWidth: 100, naturalHeight: 80 }),

@@ -9,16 +9,20 @@ A Windows photo editor for RAW development, layers and AI-assisted editing.
 [Download](#download-and-install) · [Features](#features) · [Architecture](#architecture) · [Docs](docs/README.md) · [Changelog](CHANGELOG.md)
 
 <img alt="Windows x64" src="https://img.shields.io/badge/Windows-x64-30363d?style=flat-square" />
-<a href="https://github.com/ky1rie1/Lumiseq/releases/tag/v0.9.5"><img alt="Version 0.9.5" src="https://img.shields.io/badge/version-0.9.5-58666d?style=flat-square" /></a>
+<a href="https://github.com/ky1rie1/Lumiseq/releases/tag/v0.9.6"><img alt="Version 0.9.6" src="https://img.shields.io/badge/version-0.9.6-58666d?style=flat-square" /></a>
 <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-30363d?style=flat-square" /></a>
 
 </div>
 
 ## Download and install
 
-[**Download Lumiseq 0.9.5 · Windows x64**](https://github.com/ky1rie1/Lumiseq/releases/download/v0.9.5/lumiseq.exe)
+[**Download Lumiseq 0.9.6 · Windows x64**](https://github.com/ky1rie1/Lumiseq/releases/tag/v0.9.6)
 
-Download and run `lumiseq.exe`. Node.js and Rust are not required. The app needs [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/#download-section).
+Use `Lumiseq-0.9.6-windows-x64-setup.exe`. It includes the required application DLL and checks for WebView2 Runtime, running Microsoft's bootstrapper when the Runtime is absent. Provisioning a missing Runtime requires internet access. Node.js and Rust are not required.
+
+The portable ZIP is available for machines with [WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/#download-section) already installed. **Extract the entire package** before running `lumiseq.exe`, and keep `WebView2Loader.dll` beside it.
+
+If Windows reports a missing `WebView2Loader.dll`, restore it from the application package. Reinstalling the Runtime does not supply the application's loader. See [startup troubleshooting](docs/TROUBLESHOOTING.md).
 
 The [release page](https://github.com/ky1rie1/Lumiseq/releases/latest) includes third-party notices and SHA-256 checksums. The executable is currently unsigned. The local cutout model is bundled; the AI assistant requires your own API connection or a compatible local client.
 

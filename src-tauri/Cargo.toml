@@ -1,7 +1,7 @@
 [package]
 default-run = "lumiseq"
 name = "lumiseq"
-version = "0.9.5"
+version = "0.9.6"
 description = "Lumiseq (影序) — Image editing and photography"
 authors = ["AI Creative Studio Team"]
 edition = "2021"

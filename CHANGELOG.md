@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.6 — 2026-10-02
+
+- Windows GNU releases include the architecture-matched `WebView2Loader.dll` beside the executable. Installing WebView2 Runtime alone does not provide this application dependency.
+- Release preparation rejects incomplete or mismatched native files and unexpected non-system DLL imports. It creates a portable ZIP from an explicit six-file allowlist, excluding build history, credentials and caches.
+- SHA-256 checksums cover the loader, executable, license, notices, usage instructions and ZIP. Users must extract the complete package before running the app.
+- Added a current-user Windows installer with a Microsoft WebView2 bootstrapper. It detects an existing Runtime and provisions a missing one with internet access. Installation includes the application DLL and license notices; the portable package requires an existing Runtime.
+- Download guidance now points to complete packages rather than an incomplete standalone executable.
+
 ## 0.9.5 — 2026-10-01
 
 - AI connection labels now derive from configuration and installed Agent availability. Preset model names no longer appear as an active connection without a stored API key. API configuration is distinguished from a verified connection; default Agent models remain client-selected.

@@ -6,6 +6,7 @@
 | --- | --- |
 | [项目主页](../README.md) · [English](../README.en.md) | 产品定位、功能、启动方式和当前边界 |
 | [开发指南](DEVELOPMENT.md) | 工具链、测试、原生构建和清理 |
+| [启动故障排查](TROUBLESHOOTING.md) | Loader、Runtime 与完整便携包 |
 | [架构](ARCHITECTURE.md) | 模块职责、数据流和新功能接入路径 |
 | [AI / MCP](MCP.md) | 内置工具、外部代理连接和智能滤镜接口 |
 | [模型服务](PROVIDERS.md) | 服务配置、能力路由与隐私选项 |
@@ -28,6 +29,6 @@
 
 ## 版本说明
 
-[更新记录](../CHANGELOG.md) · [0.9.5 AI 面板](releases/v0.9.5.md) · [0.9.4 AI 创作协作](releases/v0.9.4.md) · [0.9.3 工作台与精确编辑](releases/v0.9.3.md) · [0.9.2 发布说明](releases/v0.9.2.md) · [0.9.1 品牌与滤镜](releases/v0.9.1.md) · [0.9.0 色彩与工作台](releases/v0.9.0.md)
+[更新记录](../CHANGELOG.md) · [0.9.6 启动与安装](releases/v0.9.6.md) · [0.9.5 AI 面板](releases/v0.9.5.md) · [0.9.4 AI 创作协作](releases/v0.9.4.md) · [0.9.3 工作台与精确编辑](releases/v0.9.3.md) · [0.9.2 发布说明](releases/v0.9.2.md) · [0.9.1 品牌与滤镜](releases/v0.9.1.md) · [0.9.0 色彩与工作台](releases/v0.9.0.md)
 
 本地会话、内部工作笔记、验收记录、运行日志、私人素材和生成缓存不随源码分发。可复运行的测试与集成入口保留在 `tests/` 和 `integration/`，当前功能限制见项目主页和相关技术文档。

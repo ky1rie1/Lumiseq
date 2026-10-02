@@ -5,12 +5,14 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { verifyWindowsRelease } from './windows-release.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const run = promisify(execFile);
 const output = path.join(root, 'artifacts', 'windows');
 const pkg = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
 const executable = path.join(output, 'lumiseq.exe');
+verifyWindowsRelease(output);
 const { stdout: binaryVersion } = await run('powershell', ['-NoProfile', '-Command', '(Get-Item -LiteralPath $env:LUMISEQ_RELEASE_EXE).VersionInfo.FileVersion'], {
   env: { ...process.env, LUMISEQ_RELEASE_EXE: executable },
 });
@@ -67,11 +69,28 @@ if (missingLicenses.length) throw new Error(`Missing dependency license texts:\n
 await mkdir(output, { recursive: true });
 const noticePath = path.join(output, 'THIRD_PARTY_NOTICES.txt');
 await writeFile(noticePath, `Lumiseq ${pkg.version} — release license notices\nGenerated from locked dependencies for the Windows GNU target, including build tools.\n${sections.join('')}`, 'utf8');
+await writeFile(path.join(output, 'LICENSE'), await readFile(path.join(root, 'LICENSE')));
+await writeFile(path.join(output, 'README.txt'), `Lumiseq ${pkg.version} — Windows x64\n\nRecommended: use Lumiseq-${pkg.version}-windows-x64-setup.exe from the release page.\nThe installer checks for WebView2 Runtime and runs Microsoft's embedded\nbootstrapper when it is absent. Installing a missing Runtime requires internet.\n\nPortable ZIP: extract the entire package, then run lumiseq.exe.\nKeep WebView2Loader.dll in the same folder as lumiseq.exe.\nThe portable package requires an already installed WebView2 Runtime:\nhttps://developer.microsoft.com/en-us/microsoft-edge/webview2/\n\nIf Windows reports WebView2Loader.dll missing, restore it from this package.\nReinstalling the Runtime does not supply the application's loader DLL.\nDo not download DLLs from unrelated websites or put them in System32.\n\nThe application and installer are unsigned. Model weights are embedded for local cutout.\nConfigure AI connections in Settings; no credentials are included.\n\nSupport: https://github.com/ky1rie1/Lumiseq/issues\n`, 'utf8');
 const lines = [];
-for (const file of [executable, noticePath]) {
+async function checksum(file) {
   const hash = createHash('sha256');
   for await (const chunk of createReadStream(file)) hash.update(chunk);
-  lines.push(`${hash.digest('hex')}  ${path.basename(file)}`);
+  return `${hash.digest('hex')}  ${path.basename(file)}`;
 }
-await writeFile(path.join(output, 'SHA256SUMS.txt'), `${lines.join('\n')}\n`, 'utf8');
-console.log(`Prepared Lumiseq ${pkg.version}: EXE version matched, dependency license texts and SHA-256 checksums generated.`);
+for (const name of ['lumiseq.exe', 'WebView2Loader.dll', 'LICENSE', 'THIRD_PARTY_NOTICES.txt', 'README.txt']) lines.push(await checksum(path.join(output, name)));
+const checksumPath = path.join(output, 'SHA256SUMS.txt');
+await writeFile(checksumPath, `${lines.join('\n')}\n`, 'utf8');
+const { stdout: packageOutput } = await run('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(root, 'scripts', 'package-portable.ps1'), '-Directory', output, '-Version', pkg.version]);
+console.log(packageOutput.trim());
+lines.push(await checksum(path.join(output, `Lumiseq-${pkg.version}-windows-x64.zip`)));
+const installerName = `Lumiseq-${pkg.version}-windows-x64-setup.exe`;
+const installers = (await readdir(output)).filter(name => /^Lumiseq-.*-windows-x64-setup\.exe$/.test(name));
+if (installers.includes(installerName)) {
+  const { stdout: installerVersion } = await run('powershell', ['-NoProfile', '-Command', '(Get-Item -LiteralPath $env:LUMISEQ_RELEASE_EXE).VersionInfo.FileVersion'], {
+    env: { ...process.env, LUMISEQ_RELEASE_EXE: path.join(output, installerName) },
+  });
+  if (![pkg.version, `${pkg.version}.0`].includes(installerVersion.trim())) throw new Error('Installer version does not match this release.');
+  lines.push(await checksum(path.join(output, installerName)));
+}
+await writeFile(checksumPath, `${lines.join('\n')}\n`, 'utf8');
+console.log(`Prepared Lumiseq ${pkg.version}: complete x64 portable ZIP, loader, dependency notices and SHA-256 checksums verified.`);

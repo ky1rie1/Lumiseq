@@ -45,11 +45,16 @@ Module tests live beside source; broader tests live in `tests/`. Production WebG
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps1 -Publish
 npm run release:prepare
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-installer.ps1
 ```
 
-The build helper rebuilds the app crate, uses the Tauri CLI and external Cargo cache, verifies the Windows GUI PE subsystem, and copies `lumiseq.exe` to `artifacts/windows/`. Release preparation checks the embedded version and writes dependency notices and SHA-256 checksums.
+The build helper rebuilds the app crate, uses the Tauri CLI and external Cargo cache, checks native imports and the Windows GUI PE subsystem, and copies `lumiseq.exe` with its matching x64 `WebView2Loader.dll` to `artifacts/windows/`. Release preparation rejects incomplete packages, checks the embedded version, writes notices/checksums, and builds a portable ZIP from an explicit public-file allowlist. Runtime installation does not provide the application's loader DLL.
 
 Use the Tauri release path so the frontend is embedded with the correct custom protocol. Plain `cargo build --release` does not establish a standalone packaged desktop app.
+
+`package-installer.ps1` verifies the staged EXE/Loader against the native build, uses `src-tauri/tauri.release.conf.json` to create an NSIS installer, and refreshes final checksums. The release-only overlay embeds Microsoft's WebView2 bootstrapper, installs for the current user, and includes only explicitly listed license/instruction resources. Provisioning an absent Runtime needs internet; the full offline Runtime is not bundled.
+
+Tauri stamps installer-type metadata into the executable bundled by NSIS. The script restores the original portable input afterward, so installed and portable EXE hashes can differ while their application version and source match.
 
 ## Brand assets
 

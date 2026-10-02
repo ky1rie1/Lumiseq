@@ -6,7 +6,7 @@
   1. Builds the web frontend (dist/) which Tauri embeds at compile time.
   2. Rebuilds the app crate so the freshly built frontend is really embedded.
   3. Builds the Rust release binary with the external Cargo target directory.
-  4. Copies the executable to artifacts/windows/.
+  4. Copies the executable and matching WebView2 loader to artifacts/windows/.
   5. Verifies the PE subsystem is 2 (Windows GUI, never a console window).
   6. Appends a build record to artifacts/windows/builds.json.
 
@@ -89,6 +89,9 @@ $subsystem = Get-PeSubsystem $builtExe
 Write-Step "PE subsystem = $subsystem (expected 2 = Windows GUI)"
 if ($subsystem -ne 2) { throw "The release executable would open a console window (subsystem $subsystem)." }
 
+& node (Join-Path $repoRoot 'scripts\windows-release.mjs') verify (Split-Path $builtExe)
+if ($LASTEXITCODE -ne 0) { throw 'Windows release dependency validation failed.' }
+
 $version = (Get-Content (Join-Path $repoRoot 'package.json') -Raw | ConvertFrom-Json).version
 $sizeBytes = (Get-Item -LiteralPath $builtExe).Length
 
@@ -97,7 +100,8 @@ if ($Publish) {
     $artifactDir = Join-Path $repoRoot 'artifacts\windows'
     if (-not (Test-Path -LiteralPath $artifactDir)) { New-Item -ItemType Directory -Path $artifactDir -Force | Out-Null }
     $artifactExe = Join-Path $artifactDir $ArtifactName
-    Copy-Item -LiteralPath $builtExe -Destination $artifactExe -Force
+    & node (Join-Path $repoRoot 'scripts\windows-release.mjs') stage (Split-Path $builtExe) $artifactDir $ArtifactName
+    if ($LASTEXITCODE -ne 0) { throw 'Could not publish the complete Windows executable and loader.' }
     Write-Step "Published $artifactExe"
 
     $recordFile = Join-Path $artifactDir 'builds.json'

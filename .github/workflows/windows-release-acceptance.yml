@@ -1,0 +1,27 @@
+name: Windows release acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Public stable release to download and verify
+        required: true
+        default: v0.9.7
+
+permissions:
+  contents: read
+
+jobs:
+  runtime-free:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify published packages and missing-Runtime provisioning
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: ./scripts/windows-clean-acceptance.ps1 -ReleaseTag $env:RELEASE_TAG

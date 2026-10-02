@@ -9,6 +9,8 @@
 | `windows-release.mjs` | Validate x64 PE imports and stage EXE with its WebView2 loader |
 | `package-portable.ps1` | Archive only the explicit public release files |
 | `package-installer.ps1` | Bundle the verified native build with WebView2 provisioning and refresh checksums |
+| `windows-clean-acceptance.ps1` | Verify public release downloads and Runtime provisioning on a disposable GitHub-hosted VM; local/self-hosted execution is rejected |
+| `windows-home-probe.mjs` | Check rendered home-page readiness inside the disposable acceptance VM |
 | `npm run model:download` | Download and verify the pinned cutout weights |
 | `npm run brand:generate` | Generate icons and README banner from `brand/` |
 | `npm run repo:check` | Check local documentation links and tracked outputs |

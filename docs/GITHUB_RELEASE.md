@@ -79,6 +79,17 @@ GNU 构建必须通过资源映射明确把 `WebView2Loader.dll` 放在安装根
 
 发布修复必须重新下载上传后的 ZIP 和安装包，核对远端哈希。便携程序需在仅包含 Windows 系统目录的 PATH 下启动，核对加载的 Loader 来自解压目录；安装包需核对实际安装文件与首页。缺少 Runtime 的分支应在干净 Windows 环境验收，不能用已有 Runtime 的开发机启动代替。
 
+### 缺少 Runtime 时的自动验收
+
+在 GitHub Actions 手动运行 **Windows release acceptance**，填写公开的稳定版本标签（如 `v0.9.7`）。工作流在一次性的 GitHub 托管 Windows Server 虚拟机中执行：
+
+1. 下载正式 Release 的安装包和 ZIP，核对附件白名单、SHA-256 和原生依赖。
+2. 通过微软签名的卸载器移除虚拟机已有的 Runtime；用注册表和包内 Loader API 同时确认缺失。无法确认时直接失败。
+3. 执行正式安装包，检查 Runtime 已自动安装、应用版本和安装文件正确。
+4. 分别启动安装版和便携版，检查包内 Loader 的实际加载路径，以及首页工作区和 Ready 状态。
+
+脚本拒绝在本机或自托管 runner 上执行 Runtime 移除。工作流只记录虚拟机中的检查结果，不上传本机工程、素材、会话、缓存或截图。该检查覆盖联网安装和 Windows Server 测试环境；离线安装、普通用户权限及 Windows 10/11 桌面视觉体验仍需单独验收。
+
 ## 版本发布
 
 更新 `package.json`、`src-tauri/Cargo.toml` 与对应锁文件版本，记录 `CHANGELOG.md` 和 `docs/releases/` 说明。确认源码提交与成品对应后创建版本标签和 GitHub Release。

@@ -4,6 +4,7 @@ param(
   [string]$PackageDirectory
 )
 $ErrorActionPreference='Stop'
+$ProgressPreference='SilentlyContinue'
 if($Mode -eq 'Run' -and ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or -not $IsWindows)) {
   throw 'Only a disposable GitHub-hosted Windows runner may perform Runtime-free acceptance.'
 }
@@ -129,7 +130,9 @@ function Test-Application([string]$Directory,[int]$Port){
   try{
     $env:PATH="$env:SystemRoot\System32;$env:SystemRoot;$env:SystemRoot\System32\Wbem"
     $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS="--remote-debugging-port=$Port --remote-debugging-address=127.0.0.1"
-    $app=Start-Process -FilePath $exe -WorkingDirectory $Directory -WindowStyle Hidden -PassThru
+    $stderr=Join-Path $Directory 'acceptance-stderr.txt'
+    $stdout=Join-Path $Directory 'acceptance-stdout.txt'
+    $app=Start-Process -FilePath $exe -WorkingDirectory $Directory -WindowStyle Hidden -RedirectStandardError $stderr -RedirectStandardOutput $stdout -PassThru
   }finally{$env:PATH=$oldPath;$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=$oldArgs}
   try{
     & node (Join-Path $PSScriptRoot 'windows-home-probe.mjs') $Port
@@ -139,6 +142,17 @@ function Test-Application([string]$Directory,[int]$Port){
     $loader=@($app.Modules | Where-Object ModuleName -IEQ 'WebView2Loader.dll')
     if($loader.Count -ne 1 -or $loader[0].FileName -ne (Join-Path $Directory 'WebView2Loader.dll')){throw 'Application did not load its own package DLL.'}
     Write-Output "Application startup passed: $([IO.Path]::GetFileName($Directory)); version $version; own-directory Loader; rendered home page."
+  }catch{
+    $app.Refresh()
+    Write-Output ('Startup process state: '+([PSCustomObject]@{Exited=$app.HasExited;ExitCode=$(if($app.HasExited){$app.ExitCode}else{$null});WindowHandle=$app.MainWindowHandle.ToInt64()} | ConvertTo-Json -Compress))
+    Get-CimInstance Win32_Process -Filter "Name='msedgewebview2.exe'" | ForEach-Object {
+      [PSCustomObject]@{WebViewProcess=$_.ProcessId;Parent=$_.ParentProcessId;Session=$_.SessionId;DebugPortPresent=$_.CommandLine.Contains("--remote-debugging-port=$Port")} | ConvertTo-Json -Compress
+    }
+    foreach($log in @($stderr,$stdout,(Join-Path $env:LOCALAPPDATA 'AI-Creative-Studio/logs/startup.log'))){
+      if(Test-Path -LiteralPath $log){Get-Content -LiteralPath $log | Select-Object -Last 12}
+    }
+    try{$targets=Invoke-RestMethod -Uri "http://127.0.0.1:$Port/json/list" -TimeoutSec 3; $targets | Select-Object type,url,title | ConvertTo-Json -Compress}catch{Write-Output 'Loopback WebView debugger is not available.'}
+    throw
   }finally{if(-not $app.HasExited){Stop-Process -Id $app.Id}}
 }
 Test-Application $installed 19227

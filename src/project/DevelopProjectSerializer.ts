@@ -18,6 +18,7 @@ export function isDevelopProjectManifest(value: unknown): boolean {
 /** A RAW project stores adjustments and source path; transient decoded pixels are rebuilt on open. */
 export class DevelopProjectSerializer {
   async serialize(doc: DevelopDocument, assets: IAssetManager): Promise<string> {
+    if (doc.rawSmartObjectLink) throw new Error('请先应用 RAW 智能对象参数，再保存原图像工程。');
     if (!doc.sourceUri || (doc.isRaw && !(/^[A-Za-z]:[\\/]/.test(doc.sourceUri) || doc.sourceUri.startsWith('\\\\') || doc.sourceUri.startsWith('/')))) {
       throw new Error('RAW 项目需要有效的本地原始文件路径。');
     }

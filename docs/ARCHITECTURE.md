@@ -27,7 +27,7 @@ Lumiseq 使用 React 19、TypeScript、Zustand、Tauri 2 与 Rust。桌面界面
 | `src/app/` | 打开文件、保存工程、PSD、导出、最近项目与关闭流程 |
 | `src/document/`、`src/types/` | 文档工厂、递归图层、接口与参数结构 |
 | `src/commands/`、`src/history/` | 可撤销操作、事务和历史；专项命令也位于 brush、mask、selection 等模块 |
-| `src/engine/` | WebGL 调色预览、Canvas 图层合成、变换、蒙版与直方图 |
+| `src/engine/` | WebGL 调色预览、版本化 Float32 分块图层合成、变换、蒙版与直方图；旧工程保留 Canvas 合成 |
 | `src/filters/`、`src/smartobject/` | 智能对象滤镜计算与对象转换 |
 | `src/develop/` | RAW 操作服务、预设、自动影调和预览调度 |
 | `src/edit/` | 图层树、祖先锁定策略、复制与几何操作服务 |
@@ -45,7 +45,15 @@ Lumiseq 使用 React 19、TypeScript、Zustand、Tauri 2 与 Rust。桌面界面
 - `DevelopDocument` 保存 RAW 来源、调色参数、局部蒙版、快照和 AI 记录。
 - `DocumentManager` 管理打开文档、活动文档和更新事件。
 - `AssetManager` 管理图像 Blob、蒙版、显示 URL 与原生资源引用。
-- 原生 RAW 像素由 Rust 资源注册表持有，预览按需获取。当前解码结果为有界 16 位线性 sRGB，边界详见 [色彩输出](technical/COLOR_OUTPUT.md)。
+- 原生 RAW 像素由 Rust 资源注册表持有，预览按需获取。新 RAW 的主缓冲为扩展范围线性 sRGB RGBA32F，保留负值和高光余量；旧解码版本保持原有解释。边界见 [RAW 质量](RAW_QUALITY.md)。
+
+### 图像编辑精度与工程格式
+
+新图像工程显式声明 `renderingVersion: 2`、`bitDepth: 32`、`workingProfile: 'linear-srgb'`。原文件 Blob 与参数构成可重放状态；Rust 的 ICC 感知解码器提供有界 LF32 区域，`engine/editFloat` 进行浮点调整、滤镜及分组／蒙版合成，最后才缩放和转换为屏幕或交付编码。原素材的实际位深与浮点工作精度分别报告。
+
+`LSQ2` 工程把有界 JSON 清单与原始二进制资源分开，校验偏移、资源引用及 SHA-256 后再注册资源。它保存原始 RAW／栅格、蒙版和参数，不保存派生的全尺寸浮点缓存。旧 JSON 工程继续使用原有渲染；显式升级产生独立副本。高精度工程不能通过当前 8 位 PSD 写入器静默降级，使用 `.lsq` 保存可编辑状态或 PNG16／TIFF16 交付。
+
+RAW 转入编辑器形成真正的 `develop-smart-object`：保存原始文件与调色配方，参数编辑在关联 Develop 文档中进行，通过命令一次应用、一次撤销。关闭文档释放其解码租约；共享原文件与历史使用的不可变 Blob 保留。原生 RAW 分块配方使用有界行缓存，同一配方的相邻列复用计算。具体合同见 [编辑精度](technical/EDIT_PRECISION.md)。
 
 ## 命令、历史与 AI
 
@@ -73,7 +81,7 @@ Provider schema adapters 把规范工具转换为各服务的 function calling �
 
 ### 文档观察与图像通道
 
-`src/ai/vision/DocumentObservationService.ts` 从指定文档的版本化状态生成整图、区域和原尺寸细节，复用现有 `WebGLImageEngine`。它拥有独立的渲染实例与有界缓存，不读取界面画布，也不改变用户视口。编辑器的某些分组／调整合成仍需完整文档中间缓冲，缓存上限不代表全部渲染工作内存上限。
+`src/ai/vision/DocumentObservationService.ts` 从指定文档的版本化状态生成整图、区域和原尺寸细节，复用现有 `WebGLImageEngine`。它拥有独立的渲染实例与有界缓存，不读取界面画布，也不改变用户视口。版本 2 编辑合成使用原尺寸分块及有界缩放缓存；旧版本的某些分组／调整仍需完整文档中间缓冲，缓存上限不代表全部渲染工作内存上限。
 
 每张观察包含实际源尺寸、区域、输出尺寸和原文档坐标映射。服务在渲染前后检查版本；过期结果拒绝使用。RAW 区域读取携带原管线所需的边界像素及全局分析，细节输出保持 1:1。资源清理只释放观察服务拥有的资源，共享源素材继续有效。
 

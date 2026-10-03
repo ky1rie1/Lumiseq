@@ -3,7 +3,7 @@ import type { IAssetManager } from '../types/asset';
 import { applyBaseTone, applyDevelopColor, applyRelativeWhiteBalance, buildDevelopCurveLUT, luminance,
  relativeWhiteBalanceMatrix, type RGB } from '../engine/developColorMath';
 import type { FloatAutoToneSource } from './autoToneSource';
-import type { FloatAutoToneOptions } from './floatAutoTone';
+import type { FloatAutoToneOptions, NaturalSemanticColorCandidate } from './floatAutoTone';
 
 const clamp=(v:number)=>Math.max(0,Math.min(1,v));
 function maskAt(bytes:Uint8ClampedArray,width:number,height:number,p:[number,number]):number {
@@ -14,21 +14,36 @@ function maskAt(bytes:Uint8ClampedArray,width:number,height:number,p:[number,num
 }
 
 /** Uses production color and actual mask pixels; no thumbnail mask or color inference. */
-export async function createAutoToneEvaluator(settings:DevelopSettings,source:FloatAutoToneSource,
- assets:IAssetManager):Promise<NonNullable<FloatAutoToneOptions['evaluate']>> {
- const matrix=relativeWhiteBalanceMatrix(settings.whiteBalance),lut=buildDevelopCurveLUT(settings.curves);
+export interface AutoToneEvaluatorSnapshot {
+ settings:DevelopSettings;
+ source:FloatAutoToneSource;
+ masks:{mask:DevelopSettings['masks'][number];bytes:Uint8ClampedArray;width:number;height:number}[];
+ semanticCandidate?:NaturalSemanticColorCandidate;
+}
+export async function createAutoToneEvaluatorSnapshot(settings:DevelopSettings,source:FloatAutoToneSource,
+ assets:IAssetManager):Promise<AutoToneEvaluatorSnapshot> {
  const masks=await Promise.all(settings.masks.filter(m=>m.opacity>0).map(async mask=>{
   const handle=assets.getHandle(mask.maskAssetId),bytes=await assets.getMask(mask.maskAssetId);
   if(!handle?.width||!handle.height||!bytes||bytes.length!==handle.width*handle.height)throw new Error('Automatic tone mask source is unavailable');
-  return {mask,bytes,width:handle.width,height:handle.height};
+  return {mask:structuredClone(mask),bytes:bytes.slice(),width:handle.width,height:handle.height};
  }));
+ return {settings:structuredClone(settings),source:structuredClone(source),masks};
+}
+export async function createAutoToneEvaluator(settings:DevelopSettings,source:FloatAutoToneSource,
+ assets:IAssetManager):Promise<NonNullable<FloatAutoToneOptions['evaluate']>> {
+ return reconstructAutoToneEvaluator(await createAutoToneEvaluatorSnapshot(settings,source,assets));
+}
+/** Pure reconstruction allows exactly the same retained recipe to run in a dedicated worker. */
+export function reconstructAutoToneEvaluator(snapshot:AutoToneEvaluatorSnapshot):NonNullable<FloatAutoToneOptions['evaluate']> {
+ const {settings,source,masks}=snapshot;
+ const matrix=relativeWhiteBalanceMatrix(settings.whiteBalance),lut=buildDevelopCurveLUT(settings.curves);
  const points=source.samples.map((rgb,i)=>({rgb:applyRelativeWhiteBalance(rgb,matrix),pos:source.positions[i]}));
  const tails=source.tailSamples.map((rgb,i)=>({rgb:applyRelativeWhiteBalance(rgb,matrix),pos:source.tailPositions[i]}));
  return (_rgb,patch,index,tail)=>{
   const point=(tail?tails:points)[index];
   if(!point)throw new Error('Automatic tone source coordinates are unavailable');
   let color=applyBaseTone(point.rgb,{...patch,renderingVersion:settings.renderingVersion});
-  color=applyDevelopColor(color,settings,lut);
+  color=applyDevelopColor(color,{...settings,...patch},lut);
   for(const item of masks){
    const {mask}=item,value=maskAt(item.bytes,item.width,item.height,point.pos);
    const weight=clamp((mask.inverted?1-value:value)*mask.opacity);

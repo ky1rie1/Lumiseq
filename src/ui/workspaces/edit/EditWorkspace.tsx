@@ -6,7 +6,8 @@ import {
   Layers as LayersIcon,
   ZoomIn,
   ZoomOut,
-  Download
+  Download,
+  Sparkles
 } from 'lucide-react';
 import { useEditStore } from '../../../stores/useEditStore';
 import { useAppStore } from '../../../stores/useAppStore';
@@ -53,6 +54,9 @@ import { LatestPreviewScheduler } from '../../../develop/LatestPreviewScheduler'
 import { EditPreviewSurface } from './EditPreviewSurface';
 import { copyActiveLayerToClipboard, pasteClipboardImageToDocument } from '../../../clipboard/ClipboardService';
 import { extractPointerInput } from '../../../input/PointerInput';
+import { getFloatEditSources } from '../../../engine/FloatEditSources';
+import { defaultEditAutoColor, type EditAutoColorStrategy } from '../../../edit/EditAutoColorService';
+import { UpgradeEditPrecisionCommand } from '../../../edit/upgradeEditPrecision';
 
 export const EditWorkspace: React.FC<{ onExport: () => void }> = ({ onExport }) => {
   const currentDoc = useEditStore((s) => s.currentDoc);
@@ -106,6 +110,7 @@ export const EditWorkspace: React.FC<{ onExport: () => void }> = ({ onExport }) 
   const [snapEnabled, setSnapEnabled] = useState(true);
   const [newTextPrompt, setNewTextPrompt] = useState('示例文字');
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [autoColorBusy, setAutoColorBusy] = useState(false);
   const canvasMenu = useContextMenu(currentDoc?.id, setStatusMessage);
   const [displayScale, setDisplayScale] = useState(1);
   const rasterizationRequests = useRef(new Set<string>());
@@ -1116,7 +1121,7 @@ export const EditWorkspace: React.FC<{ onExport: () => void }> = ({ onExport }) 
       const file = await bridge.openFileDialog({
         title: '选择要置入的图片',
         filters: [
-          { name: '图片', extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp'] }
+          { name: '图片', extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'tif', 'tiff'] }
         ]
       });
 
@@ -1132,6 +1137,10 @@ export const EditWorkspace: React.FC<{ onExport: () => void }> = ({ onExport }) 
           const prepared = await prepareImageLayer(blob, file.name, {
             assets: defaultAssetManager,
             load: (id, source) => defaultImageEngine.loadAsset(id, source),
+            ...(currentDoc.renderingVersion === 2 && bridge.decodeEditSource ? { decodeOriginal: async (id: string, source: Blob) => {
+              const decoded = await bridge.decodeEditSource!(new Uint8Array(await source.arrayBuffer()));
+              getFloatEditSources(defaultAssetManager).adopt(id, decoded, bridge); return decoded;
+            } } : {}),
             decode: decodeImageDimensions,
           });
 
@@ -1185,6 +1194,16 @@ export const EditWorkspace: React.FC<{ onExport: () => void }> = ({ onExport }) 
       ? 'cursor-crosshair'
       : 'cursor-default';
 
+  const applyAutoColor = async (strategy: EditAutoColorStrategy) => {
+    if (!currentDoc || autoColorBusy) return;
+    setAutoColorBusy(true);
+    try {
+      const applied = await defaultEditAutoColor.apply(currentDoc.id, strategy);
+      setStatusMessage(applied ? '已创建自动调整图层' : '自动分析已取消');
+    } catch (error) { setStatusMessage(error instanceof Error ? error.message : String(error)); }
+    finally { setAutoColorBusy(false); }
+  };
+
   const canvasMenuItems = (clientX?: number, clientY?: number): ContextMenuItem[] => {
     if (!currentDoc) return [];
     const doc = currentDoc, target = selectedLayerId;
@@ -1199,6 +1218,11 @@ export const EditWorkspace: React.FC<{ onExport: () => void }> = ({ onExport }) 
       { id: 'actual', label: '100%', shortcut: 'Ctrl+1', run: view(() => { if (canvasRef.current) { setZoom(editActualSizeZoom(canvasRef.current, doc)); setPan(0, 0); } }) },
       { id: 'zoom-in', label: '放大', icon: <ZoomIn />, run: view(() => setZoom(useEditStore.getState().zoom * 1.25)) },
       { id: 'zoom-out', label: '缩小', icon: <ZoomOut />, run: view(() => setZoom(useEditStore.getState().zoom * .8)) },
+      ...(doc.renderingVersion === 2 ? [{ id: 'auto-color', label: '自动调整', icon: <Sparkles/>, disabled: autoColorBusy, children: [
+        { id: 'auto-contrast', label: '自动对比度', run: view(() => applyAutoColor('autoContrast')) },
+        { id: 'auto-tone', label: '自动色调', run: view(() => applyAutoColor('autoTone')) },
+        { id: 'auto-neutral', label: '自动颜色', run: view(() => applyAutoColor('autoColor')) },
+      ] }] : [{ id: 'upgrade-precision', label: '创建 32F 高精度副本', run: view(() => defaultCommandBus.execute(new UpgradeEditPrecisionCommand(doc.id, defaultDocumentManager))) }]),
       { id: 'hits', label: '鼠标下的图层', separatorBefore: true, disabled: !hits.length, reason: '此处没有可见图层', children: hits.map(item => ({ id: item.id, label: item.name, run: () => { guardMenuLayer(defaultDocumentManager, doc, item.id, 'none'); selectLayer(item.id); } })) },
       { id: 'select-all', label: '全选画布', shortcut: 'Ctrl+A', separatorBefore: true, run: view(() => selectAll(doc.id)) },
       { id: 'clear-selection', label: '取消选区', shortcut: 'Ctrl+D', disabled: !doc.selection, reason: '当前没有选区', run: view(() => clearSelection(doc.id)) },
@@ -1217,7 +1241,7 @@ export const EditWorkspace: React.FC<{ onExport: () => void }> = ({ onExport }) 
         <div className="edit-document-info flex items-center space-x-3">
           <span className="font-semibold text-studio-200 truncate max-w-[220px]" title={currentDoc.name}>{currentDoc.name}</span>
           <span className="edit-document-dimensions text-studio-500 font-mono">
-            {currentDoc.width} × {currentDoc.height} px
+            {currentDoc.width} × {currentDoc.height} px{currentDoc.renderingVersion === 2 ? ' · 32F' : ''}
           </span>
 
           {/* 文档修改状态：文字与圆点同时表达，不依赖颜色 */}
@@ -1287,10 +1311,11 @@ export const EditWorkspace: React.FC<{ onExport: () => void }> = ({ onExport }) 
 
         {/* Right Side: Export Buttons */}
         <div className="edit-operation-actions flex items-center space-x-2">
+          {currentDoc.renderingVersion === 2 && <button type="button" className="icon-button" title="自动颜色" aria-label="自动颜色" disabled={autoColorBusy} onClick={() => void applyAutoColor('autoColor')}><Sparkles className={autoColorBusy ? 'w-3.5 h-3.5 animate-pulse' : 'w-3.5 h-3.5'}/></button>}
           <button
             onClick={onExport}
             className="flex items-center space-x-1 bg-studio-800 hover:bg-studio-700 text-studio-200 px-2.5 py-1 rounded border border-studio-700 transition-colors cursor-pointer"
-            title="导出合成成品为 JPEG 或 PNG"
+            title={currentDoc.renderingVersion === 2 ? '导出 JPEG 或 16 位 PNG / TIFF' : '导出 JPEG 或 PNG'}
           >
             <Download className="w-3 h-3 text-sky-400" />
             <span>导出成品…</span>

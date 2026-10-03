@@ -150,6 +150,8 @@ export interface DevelopDocument {
   kind: 'develop';
   sourceUri: string;
   sourceAssetId?: string; // Reference to Asset in AssetManager
+  originalRawAssetId?: string;
+  rawSmartObjectLink?: { documentId: string; layerId: string; sourceRevision: string };
   /**
    * 原生 LibRaw 解码资源 id（Rust 侧 registry），仅当前会话有效。
    * 前端 AssetManager 的 id 与它属于两个不同的 id空间：全分辨率导出必须用这一个。

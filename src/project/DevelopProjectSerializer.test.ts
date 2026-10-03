@@ -5,6 +5,11 @@ import { rasterizeDevelopMask } from '../develop/maskRaster';
 import { DevelopProjectSerializer } from './DevelopProjectSerializer';
 
 describe('RAW develop project', () => {
+  it('requires linked RAW parameters to be saved in their original editable project', async () => {
+    const doc = createDevelopDocument({sourceUri: 'C:/cache/source.arw', fileName: 'source.arw', isRaw: true});
+    doc.rawSmartObjectLink = {documentId: 'edit', layerId: 'raw', sourceRevision: 'recipe'};
+    await expect(new DevelopProjectSerializer().serialize(doc, new AssetManager())).rejects.toThrow(/应用.*保存.*图像工程/);
+  });
   it('persists float uncorrected inspection and rejects unsupported modes', async () => {
     const serializer = new DevelopProjectSerializer();
     const assets = new AssetManager();

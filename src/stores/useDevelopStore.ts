@@ -5,12 +5,12 @@ import { HistogramData } from '../types/engine';
 import { defaultDocumentManager, type DevelopRuntimePatch } from '../document/DocumentManager';
 import { defaultAssetManager } from '../assets/AssetManager';
 import { defaultImageEngine } from '../engine/WebGLImageEngine';
-import { getPlatformBridge, isTauriEnvironment } from '../platform';
-import { getUnsupportedNativeDevelopFeatures } from '../app/nativeDevelopPayload';
+import { getPlatformBridge } from '../platform';
 import { createEditDocument, createImageLayer } from '../document/EditDocument';
 import { createColorPipelineState } from '../types/colorPipeline';
 
 import { defaultDevelopOperations, parameterForPath } from '../develop/DevelopOperationService';
+import { defaultRawSmartObjects } from '../smartobject/RawSmartObjectService';
 
 interface DevelopState {
   currentDoc: DevelopDocument | null;
@@ -240,15 +240,19 @@ export const useDevelopStore = create<DevelopState>((set, get) => ({
     if (!doc || !doc.isRaw) return;
     const bridge = getPlatformBridge();
     const sourceUri = doc.sourceUri;
+    const originalRawAssetId = doc.originalRawAssetId;
     const jobId = `raw_job_${crypto.randomUUID()}`;
     const browserAssets = new Set<string>();
     const publishedBrowserAssets = new Set<string>();
     let ownedNativeId: string | null = null;
+    let ownsReady = false;
     let decodePending = false;
     let invalidated = false;
+    let stagedSourceUri: string | undefined;
     const isCurrent = () => {
       const current = defaultDocumentManager.getDevelopDocument(docId);
-      return !invalidated && current?.activeJobId === jobId && current.sourceUri === sourceUri;
+      return !invalidated && current?.activeJobId === jobId && current.sourceUri === sourceUri &&
+        current.originalRawAssetId === originalRawAssetId;
     };
     const publish = (patch: DevelopRuntimePatch, summary: string) => isCurrent() &&
       defaultDocumentManager.updateDevelopRuntime(docId, patch, summary, jobId);
@@ -259,15 +263,25 @@ export const useDevelopStore = create<DevelopState>((set, get) => ({
     const unsubscribe = defaultDocumentManager.subscribe(event => {
       if (event.type === 'closed' && event.documentId === docId) cancel();
       else if (event.type === 'updated' && event.document.id === docId && event.document.kind === 'develop' &&
-        (event.document.sourceUri !== sourceUri ||
+        (event.document.sourceUri !== sourceUri || event.document.originalRawAssetId !== originalRawAssetId ||
           (event.document.activeJobId !== jobId && event.document.activeJobId !== null))) cancel();
     });
     defaultDocumentManager.updateDevelopRuntime(docId, {
       activeJobId: jobId, rawState: 'metadata', rawProgress: 20, rawError: null,
     }, 'Read RAW Metadata');
     try {
+      let decodePath = sourceUri;
+      if (originalRawAssetId) {
+        const original = await defaultAssetManager.getBlob(originalRawAssetId);
+        if (!isCurrent()) return;
+        if (!original?.size) throw new Error('Captured RAW original is missing.');
+        if (!bridge.stageRawSource) throw new Error('Captured RAW original requires native staging.');
+        stagedSourceUri = await bridge.stageRawSource(doc.fileName, original);
+        if (!isCurrent()) return;
+        decodePath = stagedSourceUri;
+      }
       // Every awaited stage must still own this open document before publishing.
-      const meta = await bridge.getRawMetadata(sourceUri);
+      const meta = await bridge.getRawMetadata(decodePath);
       if (!isCurrent()) return;
       if (meta) {
         publish({ width: meta.width, height: meta.height, exif: {
@@ -296,7 +310,7 @@ export const useDevelopStore = create<DevelopState>((set, get) => ({
       decodePending = true;
       let decodeResult;
       const processingVersion=doc.rawProcessingVersion ?? 1;
-      try { decodeResult = await bridge.decodeRawImage(jobId, sourceUri,processingVersion===2?'High':'Balanced',processingVersion,doc.rawCorrectionMode ?? 'camera'); }
+      try { decodeResult = await bridge.decodeRawImage(jobId, decodePath,processingVersion===2?'High':'Balanced',processingVersion,doc.rawCorrectionMode ?? 'camera'); }
       finally { decodePending = false; }
       ownedNativeId = decodeResult?.asset_id ?? null;
       if (!isCurrent()) return;
@@ -323,12 +337,20 @@ export const useDevelopStore = create<DevelopState>((set, get) => ({
           runtime.pipelineState = createColorPipelineState({ isRaw: true,
             isWorkingLinear:!!bridge.getRawLinearPreview,isDisplayEncoded:!bridge.getRawLinearPreview });
         }
-        if (publish(runtime, 'RAW Decode Complete') && runtime.sourceAssetId) publishedBrowserAssets.add(runtime.sourceAssetId);
+        if (isCurrent()) {
+          // The document owner must take over before listeners can synchronously close it.
+          ownsReady = true;
+          if (publish(runtime, 'RAW Decode Complete')) {
+            if (runtime.sourceAssetId) publishedBrowserAssets.add(runtime.sourceAssetId);
+          } else ownsReady = false;
+        }
       } else throw new Error('RAW decoder did not return an image.');
     } catch (err: unknown) {
       publish({ rawState: 'error', rawError: err instanceof Error ? err.message : String(err), activeJobId: null }, 'RAW Decode Error');
     } finally {
       unsubscribe();
+      // Decode is awaited before cleanup, so cancellation never removes an in-use source file.
+      if (stagedSourceUri) await bridge.deleteFile(stagedSourceUri).catch(error => console.warn('Could not remove staged RAW source:', error));
       const current = defaultDocumentManager.getDevelopDocument(docId);
       for (const id of browserAssets) {
         // Published previews may still belong to an undo snapshot even after replacement.
@@ -337,7 +359,7 @@ export const useDevelopStore = create<DevelopState>((set, get) => ({
         defaultImageEngine.releaseAsset(id);
         defaultAssetManager.releaseAsset(id);
       }
-      if (ownedNativeId && current?.nativeAssetId !== ownedNativeId) {
+      if (ownedNativeId && !ownsReady && current?.nativeAssetId !== ownedNativeId) {
         await bridge.releaseRawAsset(ownedNativeId).catch(error => console.warn('Could not release stale RAW asset:', error));
       }
     }
@@ -347,30 +369,15 @@ export const useDevelopStore = create<DevelopState>((set, get) => ({
     const doc = defaultDocumentManager.getDevelopDocument(docId);
     if (!doc) throw new Error(`Develop document ${docId} not found`);
 
+    if (doc.isRaw) {
+      if (!getPlatformBridge().stageRawSource) throw new Error('原始分辨率 RAW 智能对象需要桌面原生后端。');
+      return (await defaultRawSmartObjects.transfer(docId)).id;
+    }
+
     const assetId = doc.sourceAssetId || doc.previewAssetId;
     if (!assetId) throw new Error('No asset available to transfer');
 
-    let renderedBlob: Blob;
-    if (doc.isRaw && doc.nativeAssetId) {
-      const unsupported = getUnsupportedNativeDevelopFeatures(doc.settings, true);
-      if (unsupported.length) throw new Error(`原始分辨率转入暂不支持这些调整：${unsupported.join('、')}。请先在调色中调整或导出。`);
-      if (!isTauriEnvironment()) throw new Error('原始分辨率转入需要桌面版。');
-      const { appCacheDir, join } = await import('@tauri-apps/api/path');
-      const { mkdir, readFile, remove } = await import('@tauri-apps/plugin-fs');
-      const cacheDir = await appCacheDir();
-      await mkdir(cacheDir, { recursive: true });
-      const temporaryPath = await join(cacheDir, `raw-transfer-${crypto.randomUUID()}.png`);
-      try {
-        const result = await getPlatformBridge().exportRawDevelop(doc.nativeAssetId, doc.settings,
-          { format: 'png', quality: 1, width: doc.width, height: doc.height }, temporaryPath);
-        if (result !== temporaryPath) throw new Error('原始分辨率渲染未确认完成。');
-        renderedBlob = new Blob([new Uint8Array(await readFile(temporaryPath))], { type: 'image/png' });
-      } finally {
-        await remove(temporaryPath).catch(error => console.warn('Could not remove temporary RAW transfer:', error));
-      }
-    } else {
-      renderedBlob = await defaultImageEngine.exportDevelopImage(assetId, doc.settings, { format: 'png' });
-    }
+    const renderedBlob = await defaultImageEngine.exportDevelopImage(assetId, doc.settings, { format: 'png' });
     if (!renderedBlob.size) throw new Error('转入图像编辑失败：渲染结果为空。');
 
     // Probe the actual output dimensions before creating the image-edit document.
@@ -407,6 +414,21 @@ export const useDevelopStore = create<DevelopState>((set, get) => ({
     return editDoc.id;
   },
 }));
+
+const nativeReferences = new Map<string, string>();
+for (const doc of defaultDocumentManager.getOpenDocuments()) {
+  if (doc.kind === 'develop' && doc.nativeAssetId) nativeReferences.set(doc.id, doc.nativeAssetId);
+}
+defaultDocumentManager.subscribe(event => {
+  if (event.type !== 'opened' && event.type !== 'updated' && event.type !== 'closed') return;
+  const id = event.type === 'closed' ? event.documentId : event.document.id;
+  const previous = nativeReferences.get(id);
+  const next = event.type !== 'closed' && event.document.kind === 'develop' ? event.document.nativeAssetId : null;
+  if (next) nativeReferences.set(id, next); else nativeReferences.delete(id);
+  if (previous && previous !== next && ![...nativeReferences.values()].includes(previous)) {
+    void getPlatformBridge().releaseRawAsset?.(previous).catch(error => console.warn('Could not release closed RAW source:', error));
+  }
+});
 
 // State Adapter: Subscribe to DocumentManager changes
 defaultDocumentManager.subscribe((event) => {

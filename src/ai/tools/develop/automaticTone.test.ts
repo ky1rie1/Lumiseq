@@ -20,6 +20,17 @@ it('canonical automatic tone respects abort before mutation',async()=>{
  const result=await tool.execute({...c,signal:abort.signal}, {},'tone');
  expect(result.success).toBe(false);expect(c.commandBus.getHistory()).toHaveLength(0);
 });
+it('canonical automatic color documents eight controls and returns the v2 service evidence',async()=>{
+ const c=context();c.doc.nativeAssetId='native';c.doc.rawState='ready';
+ const service=new DevelopAutoToneService(c.documentManager,c.commandBus,undefined,async()=>({
+  samples:Array.from({length:64},(_,i)=>[.001+i*.001,.002+i*.001,.001+i*.001] as [number,number,number]),
+  positions:Array.from({length:64},(_,i)=>[(i+.5)/64,.5] as [number,number]),tailSamples:[],tailPositions:[],precision:'float32',sourcePixels:64,sourcePeak:.065}));
+ const tool=new AutoDevelopToneTool(()=>service);
+ expect(tool.schema.description).toMatch(/eight/i);expect(tool.schema.description).toMatch(/saturation.*vibrance/i);
+ const result=await tool.execute(c,{},'natural');
+ expect(result.success).toBe(true);expect(result.after).toMatchObject({evidence:{algorithm:'natural-linear-v2',detailVerification:'native-region-required'}});
+ expect(c.commandBus.getHistory()).toHaveLength(1);
+});
 it('canonical rendering upgrade preserves decoder and is available as a distinct explicit operation',async()=>{
  const c=context();c.doc.settings.renderingVersion=1;
  const result=await new UpgradeDevelopRenderingTool().execute(c,{documentId:c.doc.id},'upgrade');

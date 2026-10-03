@@ -290,7 +290,7 @@ pub fn atomic_write(target: &Path, bytes: &[u8]) -> Result<(), String> {
     result
 }
 #[cfg(windows)]
-fn atomic_replace(from: &Path, to: &Path) -> Result<(), String> {
+pub(crate) fn atomic_replace(from: &Path, to: &Path) -> Result<(), String> {
     use std::os::windows::ffi::OsStrExt;
     #[link(name = "kernel32")]
     extern "system" { fn MoveFileExW(from: *const u16, to: *const u16, flags: u32) -> i32; }
@@ -301,4 +301,4 @@ fn atomic_replace(from: &Path, to: &Path) -> Result<(), String> {
     Ok(())
 }
 #[cfg(not(windows))]
-fn atomic_replace(from: &Path, to: &Path) -> Result<(), String> { fs::rename(from, to).map_err(|e| e.to_string()) }
+pub(crate) fn atomic_replace(from: &Path, to: &Path) -> Result<(), String> { fs::rename(from, to).map_err(|e| e.to_string()) }

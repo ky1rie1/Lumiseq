@@ -26,6 +26,12 @@ function fixture(width = 6000, height = 4000) {
   const service = new DocumentObservationService({ documents, assets, renderer });
   return { service, documents, assets, doc, renderer, renders: () => renders };
 }
+it('invalidates observations when the edit rendering precision changes', async () => {
+  const { service, doc, documents } = fixture(20, 10);
+  const before = service.revision(doc.id);
+  documents.updateDocument({ ...doc, renderingVersion: 2, bitDepth: 32, workingProfile: 'linear-srgb' });
+  expect(service.revision(doc.id)).not.toBe(before);
+});
 it('maps an exact crop without moving the user viewport', async () => {
   const { service, doc, documents } = fixture();
   const viewport = { panX: 700, zoom: 4 }; const original = { ...viewport };

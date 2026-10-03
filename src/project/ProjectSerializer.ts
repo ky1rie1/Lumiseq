@@ -19,13 +19,16 @@ export interface ProjectManifest {
 
 const assetFields = ['sourceAssetId', 'rasterAssetId', 'maskAssetId', 'embeddedAssetId', 'cachedRenderAssetId'] as const;
 
-function referencedAssetIds(doc: EditDocument): Set<string> {
+export function referencedAssetIds(doc: EditDocument): Set<string> {
   const ids = new Set<string>();
   const visit = (layers: Layer[]) => {
     for (const layer of layers) {
       const item = layer as unknown as Record<string, unknown>;
       for (const field of assetFields) if (typeof item[field] === 'string' && item[field]) ids.add(item[field] as string);
       if (layer.mask?.assetId) ids.add(layer.mask.assetId);
+      if (layer.type === 'develop-smart-object' && doc.renderingVersion === 2) {
+        for (const mask of layer.developSettings.masks) if (mask.maskAssetId) ids.add(mask.maskAssetId);
+      }
       if (layer.type === 'group') visit(layer.children);
     }
   };
@@ -34,12 +37,20 @@ function referencedAssetIds(doc: EditDocument): Set<string> {
   return ids;
 }
 
-function validateDocument(doc: EditDocument, hasAsset: (id: string) => boolean): void {
+export function validateDocument(doc: EditDocument, hasAsset: (id: string) => boolean): void {
   const positive = (n: unknown) => typeof n === 'number' && Number.isFinite(n) && n > 0;
   if (!doc || doc.kind !== 'edit' || typeof doc.id !== 'string' || !doc.id ||
       typeof doc.name !== 'string' || !positive(doc.width) || !positive(doc.height) ||
       !positive(doc.dpi) || !Array.isArray(doc.layers) || typeof doc.backgroundColor !== 'string') {
     throw new Error('项目文档已损坏或缺少必要字段。');
+  }
+  if ((doc.renderingVersion != null && ![1, 2].includes(doc.renderingVersion)) ||
+      (doc.renderingVersion === 2 && (doc.bitDepth !== 32 || doc.workingProfile !== 'linear-srgb')) ||
+      (doc.renderingVersion !== 2 && (doc.bitDepth != null || doc.workingProfile != null))) {
+    throw new Error('不支持的项目精度或渲染版本。');
+  }
+  if (doc.renderingVersion === 2 && (!Number.isSafeInteger(doc.width) || !Number.isSafeInteger(doc.height) || doc.width * doc.height > 150_000_000)) {
+    throw new Error('高精度项目尺寸无效或超过像素上限。');
   }
   const layerIds = new Set<string>();
   const resource = (id: unknown) => {
@@ -57,8 +68,15 @@ function validateDocument(doc: EditDocument, hasAsset: (id: string) => boolean):
       layerIds.add(layer.id);
       const item = layer as unknown as Record<string, unknown>;
       if (['image', 'smart-object', 'generated-patch'].includes(layer.type)) resource(item.sourceAssetId);
-      if (['paint', 'retouch'].includes(layer.type)) resource(item.rasterAssetId);
-      if (layer.type === 'develop-smart-object') resource(item.cachedRenderAssetId);
+      if (['paint', 'retouch'].includes(layer.type) && item.rasterAssetId !== '') resource(item.rasterAssetId);
+      if (layer.type === 'develop-smart-object') {
+        resource(doc.renderingVersion === 2 ? item.sourceAssetId : item.cachedRenderAssetId);
+        if (!layer.developSettings || !Array.isArray(layer.developSettings.masks) || ![1, 2].includes(layer.rawProcessingVersion ?? 1) ||
+            !['camera', 'uncorrected'].includes(layer.rawCorrectionMode ?? 'camera') ||
+            ![1, 2].includes(layer.developSettings.renderingVersion ?? 1) ||
+            (layer.rawCorrectionMode === 'uncorrected' && layer.rawProcessingVersion !== 2)) throw new Error('RAW 智能对象参数无效。');
+        if (doc.renderingVersion === 2) for (const mask of layer.developSettings.masks) resource(mask.maskAssetId);
+      }
       if (layer.type === 'generated-patch') resource(item.maskAssetId);
       for (const field of ['embeddedAssetId', 'cachedRenderAssetId']) if (item[field]) resource(item[field]);
       if (layer.mask) { resource(layer.mask.assetId); validateMaskReference(layer.mask); }
@@ -120,12 +138,12 @@ function base64ToBytes(base64: string): Uint8Array {
   return bytes;
 }
 
-async function sha256(bytes: Uint8Array): Promise<string> {
+export async function sha256(bytes: Uint8Array): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', bytes as BufferSource);
   return Array.from(new Uint8Array(digest), value => value.toString(16).padStart(2, '0')).join('');
 }
 
-function remapDocumentAssets(doc: EditDocument, ids: Map<string, string>): void {
+export function remapDocumentAssets(doc: EditDocument, ids: Map<string, string>): void {
   const replace = (item: Record<string, unknown>, field: string) => {
     const current = item[field];
     if (typeof current === 'string' && ids.has(current)) item[field] = ids.get(current)!;
@@ -135,6 +153,7 @@ function remapDocumentAssets(doc: EditDocument, ids: Map<string, string>): void 
       const item = layer as unknown as Record<string, unknown>;
       for (const field of assetFields) replace(item, field);
       if (layer.mask) replace(layer.mask as unknown as Record<string, unknown>, 'assetId');
+      if (layer.type === 'develop-smart-object') for (const mask of layer.developSettings.masks) replace(mask as unknown as Record<string, unknown>, 'maskAssetId');
       if (layer.type === 'group') visit(layer.children);
     }
   };
@@ -143,6 +162,13 @@ function remapDocumentAssets(doc: EditDocument, ids: Map<string, string>): void 
 }
 
 export class ProjectSerializer {
+  async serializeBinary(doc: EditDocument, assets: IAssetManager): Promise<Uint8Array> {
+    return (await import('./binaryProject')).serializeBinaryProject(doc, assets);
+  }
+
+  async hydrateBinary(bytes: Uint8Array, assets: IAssetManager): Promise<EditDocument> {
+    return (await import('./binaryProject')).hydrateBinaryProject(bytes, assets);
+  }
   /** Legacy synchronous validation for projects whose assets are already loaded. */
   parse(jsonString: string, assetManager: IAssetManager): EditDocument {
     const manifest = parseManifest(jsonString);

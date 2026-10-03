@@ -11,6 +11,7 @@ import { UpdateDevelopSettingsCommand } from '../commands/develop/UpdateDevelopS
 const native = vi.hoisted(() => ({
   getRawMetadata: vi.fn(), extractRawThumbnail: vi.fn(), decodeRawImage: vi.fn(), cancelRawDecode: vi.fn(), releaseRawAsset: vi.fn(),
   getRawLinearPreview: undefined as undefined | ReturnType<typeof vi.fn>,
+  stageRawSource: undefined as undefined | ReturnType<typeof vi.fn>, deleteFile: vi.fn(),
 }));
 vi.mock('../platform', () => ({ isTauriEnvironment: () => false, getPlatformBridge: () => native }));
 
@@ -28,13 +29,17 @@ function openRaw() {
 }
 beforeEach(() => {
   native.getRawLinearPreview=undefined;
+  native.stageRawSource=vi.fn().mockResolvedValue('C:\\cache\\immutable.cr3');
+  native.deleteFile.mockResolvedValue(true);
   native.getRawMetadata.mockResolvedValue(null);
+  native.decodeRawImage.mockReset().mockResolvedValue(result('default-native'));
   native.extractRawThumbnail.mockResolvedValue(null);
   native.cancelRawDecode.mockResolvedValue(undefined);
   native.releaseRawAsset.mockResolvedValue(undefined);
 });
 afterEach(() => {
   native.getRawLinearPreview=undefined;
+  native.stageRawSource=undefined;
   defaultDocumentManager.closeAll();
   defaultCommandBus.clearHistory();
   for (const asset of defaultAssetManager.listAssets()) {
@@ -203,4 +208,151 @@ it('keeps the decoded RAW and overview available through slider undo and redo', 
     expect(current.previewAssetId).toBe(decodedPreviewId);
     expect(defaultAssetManager.hasAsset(decodedPreviewId)).toBe(true);
   }
+});
+
+async function openCapturedRaw() {
+  const doc = openRaw(), blob = new Blob(['captured camera bytes']);
+  const handle = await defaultAssetManager.registerBlob(blob, 'image', doc.fileName, { width: 20, height: 10 });
+  defaultDocumentManager.updateDocument({ ...doc, originalRawAssetId: handle.id });
+  return { doc, handle, blob };
+}
+
+it('loads captured RAW bytes through staging even when the original disk path was replaced', async () => {
+  const { doc, blob } = await openCapturedRaw();
+  native.getRawMetadata.mockImplementation(async path => {
+    if (path === doc.sourceUri) throw new Error('Original disk path was replaced');
+    return null;
+  });
+  native.decodeRawImage.mockImplementation(async (_job, path) => {
+    if (path === doc.sourceUri) throw new Error('Mutable disk path must not be decoded');
+    return result('immutable-native');
+  });
+  await useDevelopStore.getState().startRawLoadingPipeline(doc.id);
+  expect(native.stageRawSource).toHaveBeenCalledExactlyOnceWith(doc.fileName, blob);
+  expect(native.getRawMetadata).toHaveBeenCalledExactlyOnceWith('C:\\cache\\immutable.cr3');
+  expect(native.decodeRawImage.mock.calls[0].slice(1)).toEqual(['C:\\cache\\immutable.cr3', 'High', 2, 'camera']);
+  const ready = defaultDocumentManager.getDevelopDocument(doc.id)!;
+  expect(ready.rawState).toBe('ready'); expect(ready.nativeAssetId).toBe('immutable-native');
+  expect(ready.sourceUri).toBe(doc.sourceUri);
+  expect(native.deleteFile).toHaveBeenCalledExactlyOnceWith('C:\\cache\\immutable.cr3');
+  expect(native.releaseRawAsset).not.toHaveBeenCalled();
+});
+
+it.each(['missing original', 'missing staging backend'] as const)('fails explicitly for %s instead of falling back to mutable disk', async failure => {
+  const { doc, handle } = await openCapturedRaw();
+  if (failure === 'missing original') defaultAssetManager.releaseAsset(handle.id);
+  else native.stageRawSource = undefined;
+  await useDevelopStore.getState().startRawLoadingPipeline(doc.id);
+  const failed = defaultDocumentManager.getDevelopDocument(doc.id)!;
+  expect(failed.rawState).toBe('error'); expect(failed.rawError).toMatch(/original|staging/i);
+  expect(native.getRawMetadata).not.toHaveBeenCalled(); expect(native.decodeRawImage).not.toHaveBeenCalled();
+});
+
+it('cleans a late staged RAW file after closing during staging without decoding it', async () => {
+  const { doc } = await openCapturedRaw(), staged = deferred<string>();
+  native.stageRawSource!.mockReturnValue(staged.promise);
+  const loading = useDevelopStore.getState().startRawLoadingPipeline(doc.id);
+  await vi.waitFor(() => expect(native.stageRawSource).toHaveBeenCalledOnce());
+  defaultDocumentManager.closeDocument(doc.id);
+  expect(native.deleteFile).not.toHaveBeenCalled();
+  staged.resolve('C:\\cache\\late.cr3'); await loading;
+  expect(native.getRawMetadata).not.toHaveBeenCalled(); expect(native.decodeRawImage).not.toHaveBeenCalled();
+  expect(native.deleteFile).toHaveBeenCalledExactlyOnceWith('C:\\cache\\late.cr3');
+  expect(native.cancelRawDecode).not.toHaveBeenCalled();
+});
+
+it('keeps a staged RAW file until cancelled native decoding settles, then cleans it and the stale result once', async () => {
+  const { doc } = await openCapturedRaw(), decoded = deferred<ReturnType<typeof result>>();
+  native.decodeRawImage.mockReturnValue(decoded.promise);
+  const loading = useDevelopStore.getState().startRawLoadingPipeline(doc.id);
+  await vi.waitFor(() => expect(native.decodeRawImage).toHaveBeenCalledOnce());
+  defaultDocumentManager.closeDocument(doc.id);
+  expect(native.cancelRawDecode).toHaveBeenCalledOnce(); expect(native.deleteFile).not.toHaveBeenCalled();
+  decoded.resolve(result('closed-native')); await loading;
+  expect(native.deleteFile).toHaveBeenCalledExactlyOnceWith('C:\\cache\\immutable.cr3');
+  expect(native.releaseRawAsset).toHaveBeenCalledExactlyOnceWith('closed-native');
+});
+
+it.each(['metadata rejection', 'decode rejection'] as const)('cleans the staged RAW source after %s', async failure => {
+  const { doc } = await openCapturedRaw();
+  if (failure === 'metadata rejection') native.getRawMetadata.mockRejectedValue(new Error('Metadata rejected'));
+  else native.decodeRawImage.mockRejectedValue(new Error('Decode rejected'));
+  await useDevelopStore.getState().startRawLoadingPipeline(doc.id);
+  expect(defaultDocumentManager.getDevelopDocument(doc.id)?.rawState).toBe('error');
+  expect(native.deleteFile).toHaveBeenCalledExactlyOnceWith('C:\\cache\\immutable.cr3');
+});
+
+it.each(['staging', 'decoding'] as const)('invalidates a captured RAW identity change during %s', async stage => {
+  const { doc } = await openCapturedRaw(), staged = deferred<string>(), decoded = deferred<ReturnType<typeof result>>();
+  native.stageRawSource!.mockReturnValue(stage === 'staging' ? staged.promise : Promise.resolve('C:\\cache\\immutable.cr3'));
+  native.decodeRawImage.mockReturnValue(decoded.promise);
+  const loading = useDevelopStore.getState().startRawLoadingPipeline(doc.id);
+  await vi.waitFor(() => expect(stage === 'staging' ? native.stageRawSource : native.decodeRawImage).toHaveBeenCalledOnce());
+  const replacement = await defaultAssetManager.registerBlob(new Blob(['replacement source']), 'image', 'other.cr3', { width: 20, height: 10 });
+  defaultDocumentManager.updateDocument({ ...defaultDocumentManager.getDevelopDocument(doc.id)!, originalRawAssetId: replacement.id });
+  if (stage === 'staging') staged.resolve('C:\\cache\\immutable.cr3');
+  else decoded.resolve(result('wrong-original-native'));
+  await loading;
+  expect(defaultDocumentManager.getDevelopDocument(doc.id)?.nativeAssetId).toBeFalsy();
+  expect(native.deleteFile).toHaveBeenCalledExactlyOnceWith('C:\\cache\\immutable.cr3');
+  if (stage === 'staging') expect(native.decodeRawImage).not.toHaveBeenCalled();
+  else {
+    expect(native.cancelRawDecode).toHaveBeenCalledOnce();
+    expect(native.releaseRawAsset).toHaveBeenCalledExactlyOnceWith('wrong-original-native');
+  }
+});
+
+it('releases a ready native RAW handle when its document later closes', async () => {
+  const doc = openRaw(); native.decodeRawImage.mockResolvedValue(result('ready-native'));
+  await useDevelopStore.getState().startRawLoadingPipeline(doc.id);
+  expect(native.releaseRawAsset).not.toHaveBeenCalled();
+  defaultDocumentManager.closeDocument(doc.id); await Promise.resolve();
+  expect(native.releaseRawAsset).toHaveBeenCalledExactlyOnceWith('ready-native');
+});
+
+it('retains a shared ready native handle until the final open document closes', async () => {
+  const doc = openRaw(); native.decodeRawImage.mockResolvedValue(result('shared-native'));
+  await useDevelopStore.getState().startRawLoadingPipeline(doc.id);
+  const copy = { ...defaultDocumentManager.getDevelopDocument(doc.id)!, id: 'native-shared-copy' };
+  defaultDocumentManager.openDocument(copy);
+  defaultDocumentManager.closeDocument(doc.id); await Promise.resolve();
+  expect(native.releaseRawAsset).not.toHaveBeenCalled();
+  defaultDocumentManager.closeDocument(copy.id); await Promise.resolve();
+  expect(native.releaseRawAsset).toHaveBeenCalledExactlyOnceWith('shared-native');
+});
+
+it('releases the prior ready native handle on reload and the replacement on close', async () => {
+  const doc = openRaw();
+  native.decodeRawImage.mockResolvedValueOnce(result('old-ready-native')).mockResolvedValueOnce(result('new-ready-native'));
+  await useDevelopStore.getState().startRawLoadingPipeline(doc.id);
+  await useDevelopStore.getState().startRawLoadingPipeline(doc.id);
+  expect(native.releaseRawAsset).toHaveBeenCalledExactlyOnceWith('old-ready-native');
+  expect(defaultDocumentManager.getDevelopDocument(doc.id)?.nativeAssetId).toBe('new-ready-native');
+  defaultDocumentManager.closeDocument(doc.id); await Promise.resolve();
+  expect(native.releaseRawAsset.mock.calls).toEqual([['old-ready-native'], ['new-ready-native']]);
+});
+
+it('hands off ownership before synchronous document close during ready publication', async () => {
+  const doc = openRaw(); native.decodeRawImage.mockResolvedValue(result('closed-on-publication'));
+  const unsubscribe = defaultDocumentManager.subscribe(event => {
+    if (event.type === 'updated' && event.document.id === doc.id && event.document.kind === 'develop' && event.document.rawState === 'ready') {
+      defaultDocumentManager.closeDocument(doc.id);
+    }
+  });
+  try { await useDevelopStore.getState().startRawLoadingPipeline(doc.id); }
+  finally { unsubscribe(); }
+  expect(defaultDocumentManager.getDocument(doc.id)).toBeNull();
+  expect(native.releaseRawAsset).toHaveBeenCalledExactlyOnceWith('closed-on-publication');
+});
+
+it('releases every ready handle across repeated linked RAW variant open and close', async () => {
+  for (let i = 0; i < 3; i++) {
+    const doc = openRaw();
+    defaultDocumentManager.updateDocument({ ...doc, rawSmartObjectLink: { documentId: 'edit-source', layerId: 'raw-layer', sourceRevision: 'recipe' } });
+    native.decodeRawImage.mockResolvedValue(result(`variant-native-${i}`));
+    await useDevelopStore.getState().startRawLoadingPipeline(doc.id);
+    defaultDocumentManager.closeDocument(doc.id);
+  }
+  await Promise.resolve();
+  expect(native.releaseRawAsset.mock.calls).toEqual([['variant-native-0'], ['variant-native-1'], ['variant-native-2']]);
 });

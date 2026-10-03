@@ -7,6 +7,7 @@ import { BrushStrokeCommand, PaintMaskCommand } from '../../brush/BrushCommands'
 import { defaultAssetManager } from '../../assets/AssetManager';
 import { TransformCommand } from '../../commands/edit/TransformCommand';
 import { CreateLayerCommand } from '../../commands/edit/CreateLayerCommand';
+import { rawRecipeRevision } from '../../smartobject/RawSmartObjectService';
 export function allLayers(layers: Layer[]): Layer[] { return layers.flatMap(layer => [layer, ...(layer.type === 'group' ? allLayers(layer.children) : [])]); }
 function parameter(settings: any, id: string, channel?: string): unknown {
   if (id === 'temperature' || id === 'tint') return settings.whiteBalance[id];
@@ -19,6 +20,8 @@ function parameter(settings: any, id: string, channel?: string): unknown {
 export function technicalReview(activeDocument: StudioDocument | null, actions: AgentActionLogEntry[], getDocument?: (id:string)=>StudioDocument|null, getCommand?:(id:string)=>ICommand|undefined): { verified: string[]; pending: string[] } {
   const verified: string[] = [], pending: string[] = [];
   const latest = new Map<string, AgentActionLogEntry>();
+  const lastTransition = actions.filter(action => action.status==='success'&&action.result?.changedDocumentId&&
+    ['create_document','activate_document','edit_upgrade_precision','edit_raw_smart_object'].includes(action.toolName)).at(-1);
   for (const action of actions) {
     if (action.status !== 'success') { pending.push(`${action.toolName}: ${action.result?.error?.code ?? 'tool failed'}`); continue; }
     if (action.toolName === 'create_document' && action.result?.changedDocumentId) {
@@ -26,6 +29,18 @@ export function technicalReview(activeDocument: StudioDocument | null, actions: 
       (created?.id===action.result.changedDocumentId ? verified:pending).push(`created document ${action.result.changedDocumentId}`);
     }
     if (!action.result?.commandId) {
+      if(action.toolName==='edit_raw_smart_object'&&action.args.action==='open') {
+        const id=action.result?.changedDocumentId,target=id?getDocument?.(id)??activeDocument:null;
+        const link=target?.kind==='develop'?target.rawSmartObjectLink:undefined;
+        const source=link?getDocument?.(link.documentId):null;
+        const layer=source?.kind==='edit'?allLayers(source.layers).find(layer=>layer.id===link?.layerId):undefined;
+        const valid=!!id&&target?.id===id&&target.kind==='develop'&&target.isRaw&&
+          (lastTransition!==action||activeDocument?.id===id)&&!!link&&link.documentId===action.args.documentId&&link.layerId===action.args.layerId&&
+          source?.kind==='edit'&&source.renderingVersion===2&&layer?.type==='develop-smart-object'&&!!layer.sourceAssetId&&
+          target.originalRawAssetId===layer.sourceAssetId&&link.sourceRevision===rawRecipeRevision(layer);
+        (valid?verified:pending).push(`RAW recipe navigation ${id??'missing target'}${valid?'':' could not be verified'}`);
+        continue;
+      }
       if(action.result?.renderRequired&&action.toolName!=='create_document')pending.push(`${action.toolName}: canonical mutation did not produce a command`);
       continue;
     }

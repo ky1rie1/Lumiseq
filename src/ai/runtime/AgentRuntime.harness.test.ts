@@ -19,9 +19,33 @@ import type { AgentMessage, CanonicalToolSchema } from '../types';
 import type { DocumentObservationRenderPort } from '../vision/observationTypes';
 import { defaultAssetManager } from '../../assets/AssetManager';
 import type { PreparedCreativeReference } from '../harness/CreativeBrief';
+import { rawRecipeRevision } from '../../smartobject/RawSmartObjectService';
 
 afterEach(() => {vi.useRealTimers();vi.unstubAllGlobals();vi.restoreAllMocks();});
 const edit = { role: 'assistant', toolCalls: [{ id: 'edit', name: 'develop_set_parameter', arguments: { parameterId: 'exposure', value: 0.3 } }] } satisfies AgentMessage;
+it.each([false,true])('invalidates native coverage across a RAW transition; fresh native observation=%s', async fresh => {
+  const target = createDevelopDocument({ sourceUri: 'new.arw', fileName: 'New RAW', isRaw: true, width: 100, height: 80 });
+  const rawLayer:Layer={...createImageLayer({name:'RAW',sourceAssetId:'original',naturalWidth:100,naturalHeight:80}),type:'develop-smart-object',sourceRawUri:'original.arw',developSettings:structuredClone(target.settings),rawProcessingVersion:1,rawCorrectionMode:'camera'};
+  const source=createEditDocument({name:'Source',width:100,height:80,renderingVersion:2,layers:[rawLayer]});
+  target.originalRawAssetId='original';target.rawSmartObjectLink={documentId:source.id,layerId:rawLayer.id,sourceRevision:rawRecipeRevision(rawLayer as any)};
+  const f = fixture([
+    { role: 'assistant', toolCalls: [{ id: 'open', name: 'edit_raw_smart_object', arguments: { action: 'open', documentId:source.id,layerId:rawLayer.id } }] },
+    ...(fresh?[{role:'assistant' as const,toolCalls:[{id:'native',name:'inspect_region',arguments:{documentId:target.id,mode:'detail',region:{x:20,y:20,width:20,height:20}}}]}]:[]),
+    edit,
+  ]);
+  f.docs.openDocument(source);target.rawState = 'ready';f.docs.openDocument(target, false);
+  f.registry.get('edit_raw_smart_object')!.execute = async (_context, _args, toolCallId) => {
+    f.docs.setActiveDocument(target.id);return { success: true, toolCallId, changedDocumentId: target.id, renderRequired: true };
+  };
+  const run = await f.runtime.run('Check local RAW texture', { taskKind: 'local-detail', targetIds:[rawLayer.id],regions: [{ x: 20, y: 20, width: 20, height: 20 }] });
+  expect(run.status, JSON.stringify({stopReason:run.stopReason,pending:run.verification?.pending,actions:run.actions})).toBe(fresh?'completed':'partial');
+  if(!fresh)expect(run.stopReason).toBe('detail_coverage_pending');
+  expect(f.bus.getHistory()).toHaveLength(fresh?1:0);
+  if(fresh)expect(JSON.stringify(f.reviews[0])).toContain('Original source overview before document transition; not current ROI coverage');
+  const images = f.seen[1].flatMap(message => message.images ?? []);
+  expect(images).toHaveLength(1);
+  expect(run.verification!.observations.find(e => e.observationId === images[0].observationId)?.documentId).toBe(target.id);
+});
 it.each([{}, { geometry: { center: { x: 0.5, y: 0.5 }, radiusX: 0.1, radiusY: 0.1 } }])('blocks inverted local Develop updates before canonical dispatch: %j', async patch => {
   const f = fixture([{ role: 'assistant', toolCalls: [{ id: 'invert', name: 'develop_update_mask', arguments: { maskId: 'mask', inverted: true, ...patch } }] }]);
   f.doc.settings.masks = [{ id: 'mask', name: 'Local', maskAssetId: 'mask-asset', kind: 'radial', inverted: false, opacity: 1, exposure: 1,

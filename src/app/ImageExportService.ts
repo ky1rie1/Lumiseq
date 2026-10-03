@@ -30,13 +30,14 @@ export function getImageExportColorContract(
   if (target?.kind === 'unavailable') {
     return { colorSpace: 'srgb', bitDepth: null, backend: 'unavailable', metadata: 'unavailable' };
   }
-  if (target?.kind === 'native') {
+  if (target?.kind === 'native' || (document.kind === 'edit' && document.renderingVersion === 2)) {
     return {colorSpace:profile,bitDepth:format==='jpeg'?8:16,backend:'native',metadata:'icc-profile'};
   }
   return { colorSpace: 'srgb', bitDepth: 8, backend: 'canvas', metadata: 'browser-managed' };
 }
 
 export interface ImageExportPorts {
+  exportEditFloat?(document: Extract<StudioDocument, {kind: 'edit'}>, options: ImageExportOptions, path: string): Promise<string>;
   exportRaw(assetId: string, settings: DevelopSettings, options: ImageExportOptions, path: string): Promise<unknown>;
   renderDevelop(assetId: string, settings: DevelopSettings, options: {format: 'jpeg' | 'png'; quality: number; width: number; height: number}): Promise<Blob>;
   renderEdit(document: Extract<StudioDocument, {kind: 'edit'}>, options: {format: 'jpeg' | 'png'; quality: number; width: number; height: number}): Promise<Blob>;
@@ -59,10 +60,16 @@ export class ImageExportService {
     return serializeWrites([path.toLowerCase()], async () => {
     const renderOptions = { format: options.format, quality: options.quality / 100, width: options.width, height: options.height,
       ...(options.outputProfile?{outputProfile:options.outputProfile}:{}) };
-    const nativeTarget=document.kind==='develop' && resolveDevelopExportTarget(document).kind==='native';
-    if (!nativeTarget && (options.format==='tiff' || options.outputProfile==='display-p3')) throw new Error('TIFF / Display P3 requires native RAW pixels.');
+    const nativeTarget=(document.kind==='develop' && resolveDevelopExportTarget(document).kind==='native') || (document.kind==='edit' && document.renderingVersion === 2);
+    if (!nativeTarget && (options.format==='tiff' || options.outputProfile==='display-p3')) throw new Error('TIFF / Display P3 requires native high-precision pixels.');
     const canvasOptions={...renderOptions,format:options.format==='jpeg'?'jpeg' as const:'png' as const};
     if (document.kind === 'edit') {
+      if (document.renderingVersion === 2) {
+        if (!this.ports.exportEditFloat) throw new Error('高精度编辑导出需要桌面原生后端。');
+        const result = await this.ports.exportEditFloat(document, renderOptions, path);
+        if (result !== path) throw new Error('高精度导出未确认文件保存。');
+        return;
+      }
       await this.writeValid(path, await this.ports.renderEdit(document, canvasOptions));
       return;
     }
@@ -85,6 +92,7 @@ export class ImageExportService {
 }
 
 export const defaultImageExportService = new ImageExportService({
+  exportEditFloat: (document, options, path) => defaultImageEngine.exportEditFloat(document, options, path),
   exportRaw: (assetId, settings, options, path) => getPlatformBridge().exportRawDevelop(assetId, settings, options, path),
   renderDevelop: (assetId, settings, options) => defaultImageEngine.exportDevelopImage(assetId, settings, options),
   renderEdit: (document, options) => defaultImageEngine.exportEditImage(document, options),

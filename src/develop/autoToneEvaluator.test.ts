@@ -3,6 +3,17 @@ import { AssetManager } from '../assets/AssetManager';
 import { createDefaultDevelopSettings } from '../document/DevelopDocument';
 import { createAutoToneEvaluator } from './autoToneEvaluator';
 import type { FloatAutoToneSource } from './autoToneSource';
+import { applyDevelopColor, buildDevelopCurveLUT } from '../engine/developColorMath';
+
+it('evaluates candidate color controls while legacy patches retain existing color',async()=>{
+ const settings=createDefaultDevelopSettings(false);settings.saturation=30;settings.vibrance=20;
+ const source:FloatAutoToneSource={samples:[[.3,.15,.08]],positions:[[.5,.5]],tailSamples:[],tailPositions:[],precision:'float32',sourcePixels:1,sourcePeak:.3};
+ const evaluate=await createAutoToneEvaluator(settings,source,new AssetManager());
+ const neutral={exposure:0,contrast:0,shadows:0,highlights:0,whites:0,blacks:0};
+ const candidate={...neutral,saturation:-5,vibrance:4};
+ expect(evaluate(source.samples[0],candidate,0,false)).toEqual(applyDevelopColor(source.samples[0],{...settings,...candidate},buildDevelopCurveLUT(settings.curves)));
+ expect(evaluate(source.samples[0],neutral,0,false)).toEqual(applyDevelopColor(source.samples[0],settings,buildDevelopCurveLUT(settings.curves)));
+});
 
 it('matches sequential production shadow and highlight gains in a local mask', async () => {
   const assets = new AssetManager();

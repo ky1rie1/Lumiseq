@@ -10,6 +10,54 @@ use std::fs;
 
 pub mod local_agents;
 
+fn edit_binary_request(request:&tauri::ipc::Request<'_>,limit:usize)->Result<Vec<u8>,String>{
+    match request.body(){tauri::ipc::InvokeBody::Raw(bytes) if bytes.len()<=limit=>Ok(bytes.clone()),_=>Err("Edit source/band requires bounded binary IPC".into())}
+}
+#[tauri::command]
+pub async fn decode_edit_source(request:tauri::ipc::Request<'_>)->Result<crate::edit_image::SourceInfo,String>{
+    let bytes=edit_binary_request(&request,1024*1024*1024)?;
+    tauri::async_runtime::spawn_blocking(move||crate::edit_image::decode_source(bytes)).await.map_err(|e|e.to_string())?
+}
+#[tauri::command]
+pub async fn stage_raw_edit_source(request:tauri::ipc::Request<'_>)->Result<String,String>{
+    let bytes=edit_binary_request(&request,256*1024*1024)?;
+    let header=request.headers().get("x-edit-name").and_then(|v|v.to_str().ok()).ok_or("Missing RAW source name")?;
+    let url=reqwest::Url::parse(&format!("http://localhost/?name={header}")).map_err(|_|"Invalid RAW source name")?;
+    let name=url.query_pairs().find(|(key,_)|key=="name").map(|(_,value)|value.into_owned()).ok_or("Invalid RAW source name")?;
+    tauri::async_runtime::spawn_blocking(move||crate::edit_image::stage_raw_source(&name,bytes)).await.map_err(|e|e.to_string())?
+}
+#[tauri::command]
+pub async fn read_edit_source_tile(asset_id:String,x:usize,y:usize,width:usize,height:usize)->Result<tauri::ipc::Response,String>{
+    let bytes=tauri::async_runtime::spawn_blocking(move||crate::edit_image::read_source_tile(&asset_id,x,y,width,height)).await.map_err(|e|e.to_string())??;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+#[tauri::command]
+pub fn release_edit_source(asset_id:String)->Result<(),String>{crate::edit_image::release_source(&asset_id)}
+#[tauri::command]
+pub async fn render_raw_develop_tile(asset_id:String,settings:NativeDevelopSettings,x:usize,y:usize,width:usize,height:usize)->Result<tauri::ipc::Response,String>{
+    let bytes=tauri::async_runtime::spawn_blocking(move||crate::raw::develop::render_raw_develop_tile(&asset_id,settings,x,y,width,height)).await.map_err(|e|e.to_string())?.map_err(|e|e.to_string())?;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+#[tauri::command]
+pub async fn begin_edit_export(job_id:String,path:String,options:crate::edit_image::ExportOptions)->Result<(),String>{
+    tauri::async_runtime::spawn_blocking(move||crate::edit_image::begin_export(&job_id,&path,options)).await.map_err(|e|e.to_string())?
+}
+#[tauri::command]
+pub async fn append_edit_export_band(request:tauri::ipc::Request<'_>)->Result<(),String>{
+    let bytes=edit_binary_request(&request,12+6_000_000*16)?;
+    let header=request.headers().get("x-edit-job").and_then(|v|v.to_str().ok()).ok_or("Missing export job header")?;
+    let url=reqwest::Url::parse(&format!("http://localhost/?job={header}")).map_err(|_|"Invalid export job header")?;
+    let job=url.query_pairs().find(|(key,_)|key=="job").map(|(_,value)|value.into_owned()).ok_or("Invalid export job header")?;
+    let y=request.headers().get("x-edit-row").and_then(|v|v.to_str().ok()).ok_or("Missing export row header")?.parse::<usize>().map_err(|_|"Invalid export row header")?;
+    tauri::async_runtime::spawn_blocking(move||crate::edit_image::append_export(&job,y,bytes)).await.map_err(|e|e.to_string())?
+}
+#[tauri::command]
+pub async fn finish_edit_export(job_id:String)->Result<String,String>{
+    tauri::async_runtime::spawn_blocking(move||crate::edit_image::finish_export(&job_id)).await.map_err(|e|e.to_string())?
+}
+#[tauri::command]
+pub fn cancel_edit_export(job_id:String)->Result<(),String>{crate::edit_image::cancel_export(&job_id)}
+
 #[tauri::command]
 pub fn get_system_info() -> SystemInfo {
     system::get_system_info()
@@ -193,7 +241,7 @@ pub fn stage_recovery_source(file_name: String, bytes: Vec<u8>) -> Result<String
 /// Drops only the decoded asset reference owned by the requesting frontend job.
 #[tauri::command]
 pub fn release_raw_asset(asset_id: String) {
-    crate::assets::global_asset_registry().release(&asset_id);
+    if crate::assets::global_asset_registry().release(&asset_id){crate::raw::develop::clear_raw_render_cache(&asset_id);}
 }
 
 // === Native AppPaths & Storage Commands ===

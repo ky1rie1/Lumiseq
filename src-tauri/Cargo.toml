@@ -31,8 +31,9 @@ tauri-plugin-fs = "2"
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "tiff"] }
+image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "tiff", "webp", "bmp"] }
 png = "0.18.1"
+moxcms = { version = "=0.8.1", features = ["extended_range"] }
 tiff = { version = "0.11.3", default-features = false }
 kamadak-exif = "0.6.1"
 arboard = "3.4"

@@ -6,6 +6,7 @@ pub mod thumbnail;
 pub mod decoder;
 pub mod detail;
 mod linear_source;
+mod resample;
 mod optics;
 #[cfg(test)]
 mod compatibility_tests;
@@ -17,7 +18,7 @@ mod spatial;
 mod quality;
 mod wavelet;
 mod haze;
-mod output_profile;
+pub(crate) mod output_profile;
 
 pub use types::{DemosaicQuality, HighlightStrategy, PixelFormat, RawDecodeResult, RawError, RawMetadata};
 pub use metadata::read_metadata;

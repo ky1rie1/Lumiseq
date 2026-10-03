@@ -12,6 +12,26 @@ pub struct RawSpatialAnalysis {
     pub haze: haze::HazeAnalysis,
     pub noise: [f32; 3],
 }
+type AnalysisEntry=(String,Vec<u32>,RawSpatialAnalysis);
+fn analysis_cache()->&'static std::sync::Mutex<std::collections::VecDeque<AnalysisEntry>>{
+    static CACHE:std::sync::OnceLock<std::sync::Mutex<std::collections::VecDeque<AnalysisEntry>>>=std::sync::OnceLock::new();
+    CACHE.get_or_init(||std::sync::Mutex::new(std::collections::VecDeque::new()))
+}
+pub(super) fn clear_raw_analysis_cache(asset_id:&str){if let Ok(mut cache)=analysis_cache().lock(){cache.retain(|(id,_,_)|id!=asset_id);}}
+
+/// Tiny whole-source analysis cache. Asset existence is checked before a cache hit;
+/// the cache holds no source lease and is bounded to eight overview records.
+pub(super) fn cached_raw_spatial(asset_id:&str,s:&NativeDevelopSettings)->Result<RawSpatialAnalysis,RawError>{
+    let matrix=base_matrix(s)?;
+    if global_asset_registry().with_asset(asset_id,|_|()).is_none(){return Err(RawError::DecodeFailed("RAW analysis source unavailable".into()));}
+    let mut key:Vec<u32>=matrix.iter().map(|v|v.to_bits()).collect();
+    key.extend([s.rendering_version as u32,s.exposure.to_bits(),s.highlights.to_bits(),s.shadows.to_bits(),s.whites.to_bits(),s.blacks.to_bits(),s.contrast as u32]);
+    let mut cache=analysis_cache().lock().map_err(|_|RawError::DecodeFailed("RAW analysis cache unavailable".into()))?;
+    if let Some(index)=cache.iter().position(|(id,k,_)|id==asset_id&&*k==key){let entry=cache.remove(index).unwrap();let analysis=entry.2.clone();cache.push_back(entry);return Ok(analysis);}
+    let analysis=analyze_raw_spatial(asset_id,s)?;
+    if cache.len()==8{cache.pop_front();}
+    cache.push_back((asset_id.into(),key,analysis.clone()));Ok(analysis)
+}
 
 pub(super) fn base_matrix(s: &NativeDevelopSettings) -> Result<[f32; 9], RawError> {
     if !matches!(s.rendering_version,1|2) || !(-8.0..=8.0).contains(&s.exposure)

@@ -9,6 +9,8 @@ import { routeFile } from '../router/FileRouter';
 import { openLayeredPsd } from './PsdOperationService';
 import type { IAssetManager } from '../types/asset';
 import type { IDocumentManager, StudioDocument } from '../types/document';
+import { isBinaryProject } from '../project/binaryProject';
+import { bindFloatEditSourcesToDocuments, getFloatEditSources } from '../engine/FloatEditSources';
 
 export interface DocumentOpeningDependencies {
   documents?: IDocumentManager;
@@ -38,6 +40,7 @@ export function decodeImageDimensions(url: string): Promise<{width: number; heig
 export async function openSelectedFile(selected: SelectedFile, dependencies: DocumentOpeningDependencies = {}): Promise<StudioDocument> {
   const documents = dependencies.documents ?? defaultDocumentManager;
   const assets = dependencies.assets ?? defaultAssetManager;
+  bindFloatEditSourcesToDocuments(documents, assets);
   const route = routeFile(selected.name);
   let doc: StudioDocument;
   let registeredAsset: string | undefined;
@@ -45,11 +48,16 @@ export async function openSelectedFile(selected: SelectedFile, dependencies: Doc
     if (route.fileType === 'project') {
       if (route.extension === 'psd') doc = await openLayeredPsd(selected.blob, assets);
       else {
+        const header = new Uint8Array(await selected.blob.slice(0, 4).arrayBuffer());
+        if (isBinaryProject(header)) {
+          doc = await defaultProjectSerializer.hydrateBinary(new Uint8Array(await selected.blob.arrayBuffer()), assets);
+        } else {
         const json = await selected.blob.text();
         const manifest = JSON.parse(json) as unknown;
         doc = isDevelopProjectManifest(manifest)
           ? await defaultDevelopProjectSerializer.hydrate(json, assets, dependencies.platform ?? getPlatformBridge())
           : await defaultProjectSerializer.hydrate(json, assets);
+        }
       }
       if (route.extension === 'psd' && doc.kind === 'edit' && doc.name === 'Photoshop 文档') doc.name = selected.name;
       // Reopening a snapshot must not overwrite an already open document with the same ID.
@@ -68,23 +76,35 @@ export async function openSelectedFile(selected: SelectedFile, dependencies: Doc
         width:metadata.width,height:metadata.height,isRaw:true,
         exif:{cameraMake:metadata.camera_make,cameraModel:metadata.camera_model,lensModel:metadata.lens_model,
           iso:metadata.iso,shutterSpeed:metadata.shutter_speed,aperture:metadata.aperture,focalLength:metadata.focal_length,dateTime:metadata.capture_time}});
+      const original = await assets.registerBlob(selected.blob, 'image', selected.name, { width: metadata.width, height: metadata.height });
+      registeredAsset = original.id;
+      doc.originalRawAssetId = original.id;
     } else if (route.fileType === 'raster') {
       const asset = await assets.registerBlob(selected.blob,'image',selected.name);
       registeredAsset = asset.id;
-      const url = assets.getDisplayUrl(asset.id);
-      if (!url) throw new Error('无法读取图像资源。');
-      const dimensions = await (dependencies.decodeImage ?? decodeImageDimensions)(url);
+      const platform = dependencies.platform ?? getPlatformBridge();
+      const useNative = !!platform.decodeEditSource && (!!dependencies.platform || !dependencies.decodeImage);
+      const decoded = useNative ? await platform.decodeEditSource!(new Uint8Array(await selected.blob.arrayBuffer())) : null;
+      let dimensions: { width: number; height: number };
+      if (decoded) {
+        getFloatEditSources(assets).adopt(asset.id, decoded, platform);
+        dimensions = decoded;
+      } else {
+        const url = assets.getDisplayUrl(asset.id);
+        if (!url) throw new Error('无法读取图像资源。');
+        dimensions = await (dependencies.decodeImage ?? decodeImageDimensions)(url);
+      }
       if (![dimensions.width,dimensions.height].every(n => Number.isFinite(n) && n > 0)) throw new Error('图像尺寸无效。');
       asset.width = dimensions.width; asset.height = dimensions.height;
       const layer = createImageLayer({name:'背景',sourceAssetId:asset.id,naturalWidth:dimensions.width,naturalHeight:dimensions.height});
-      doc = createEditDocument({name:selected.name,...dimensions,layers:[layer]});
+      doc = createEditDocument({name:selected.name,...dimensions,layers:[layer], ...(decoded ? { renderingVersion: 2 } : {})});
     } else {
       throw new Error(`不支持的文件格式：${route.extension || selected.name}`);
     }
     documents.openDocument(doc,true);
     return doc;
   } catch (error) {
-    if (registeredAsset) assets.releaseAsset(registeredAsset);
+    if (registeredAsset) { getFloatEditSources(assets).release(registeredAsset); assets.releaseAsset(registeredAsset); }
     throw error;
   }
 }

@@ -47,6 +47,8 @@ async function probeImageDimensions(blob: Blob): Promise<{ width?: number; heigh
 }
 
 export class AssetManager implements IAssetManager {
+  private releaseListeners = new Set<(assetId: string) => void>();
+  subscribeRelease(listener: (assetId: string) => void): () => void { this.releaseListeners.add(listener); return () => { this.releaseListeners.delete(listener); }; }
   private assets: Map<string, AssetItem> = new Map();
   private rawMaskCache: Map<string, Uint8ClampedArray> = new Map();
 
@@ -298,6 +300,7 @@ export class AssetManager implements IAssetManager {
         }
         this.assets.delete(assetId);
         this.rawMaskCache.delete(assetId);
+        for (const listener of this.releaseListeners) listener(assetId);
       }
     }
   }
@@ -324,6 +327,7 @@ export class AssetManager implements IAssetManager {
     for (const [id] of this.assets) {
       this.releaseAsset(id);
     }
+    for (const id of this.assets.keys()) for (const listener of this.releaseListeners) listener(id);
     this.assets.clear();
     this.rawMaskCache.clear();
   }

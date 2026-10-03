@@ -84,6 +84,15 @@ export interface ClipboardImage {
 
 export interface IPlatformBridge {
   readonly isDesktop: boolean;
+  decodeEditSource?(bytes: Uint8Array): Promise<{ assetId: string; width: number; height: number; bitDepth: 8 | 16 | 32 }>;
+  readEditSourceTile?(assetId: string, x: number, y: number, width: number, height: number): Promise<import('../engine/editFloat/types').LinearPixelBuffer>;
+  releaseEditSource?(assetId: string): Promise<void>;
+  renderRawDevelopTile?(assetId: string, settings: import('../app/nativeDevelopPayload').NativeDevelopPayload, x: number, y: number, width: number, height: number): Promise<import('../engine/editFloat/types').LinearPixelBuffer>;
+  beginEditExport?(jobId: string, path: string, options: { width: number; height: number; format: 'png' | 'jpeg' | 'tiff' | 'tiff-f32'; outputProfile?: 'srgb' | 'display-p3'; quality: number }): Promise<void>;
+  appendEditExportBand?(jobId: string, y: number, pixels: import('../engine/editFloat/types').LinearPixelBuffer): Promise<void>;
+  finishEditExport?(jobId: string): Promise<string>;
+  cancelEditExport?(jobId: string): Promise<void>;
+  stageRawSource?(name: string, blob: Blob): Promise<string>;
   checkRelease?(etag?: string, requestId?: string): Promise<import('../releases/releaseTypes').ReleaseQueryResult>;
   cancelReleaseCheck?(requestId: string): Promise<void>;
   openReleasePage?(url: string): Promise<void>;

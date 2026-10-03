@@ -7,6 +7,7 @@ unsafe extern "C" {}
 pub mod core;
 pub mod filesystem;
 pub mod raw;
+pub mod edit_image;
 pub mod color;
 pub mod assets;
 pub mod security;
@@ -32,6 +33,15 @@ pub fn run() {
             })
             .invoke_handler(tauri::generate_handler![
                 commands::get_system_info,
+                commands::decode_edit_source,
+                commands::stage_raw_edit_source,
+                commands::read_edit_source_tile,
+                commands::release_edit_source,
+                commands::render_raw_develop_tile,
+                commands::begin_edit_export,
+                commands::append_edit_export_band,
+                commands::finish_edit_export,
+                commands::cancel_edit_export,
                 commands::inspect_local_file,
                 commands::read_local_binary_file,
                 commands::write_local_binary_file,

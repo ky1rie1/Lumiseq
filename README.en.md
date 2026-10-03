@@ -68,7 +68,7 @@ RAW parameters, layers and masks are project data. The AI harness supplies opera
 ## Known limitations
 
 - See [RAW camera compatibility](docs/RAW_COMPATIBILITY.md) for tested models and unsupported compression variants. Recognizing an extension does not establish universal camera support.
-- The new RAW pipeline uses extended linear sRGB float pixels and PNG/TIFF16 delivery; image-editing Canvas exports remain 8-bit. Custom camera DCP/ICC profiles, floating sensor DNG, print soft proofing and camera/ISO noise calibration remain unsupported. Adobe rendering equivalence is not claimed.
+- The current development source uses extended linear sRGB float pixels for RAW and new layered documents, with PNG/TIFF16 delivery; legacy projects keep their renderer. RAW smart objects retain originals and recipes; see [editor precision](docs/technical/EDIT_PRECISION.md). Published 0.9.7 installers still use the earlier implementation until a new release is made. Custom camera DCP/ICC profiles, floating sensor DNG, print soft proofing and camera/ISO noise calibration remain unsupported. Adobe rendering equivalence is not claimed.
 - Color validation compares two public Nikon Z7 samples against RawTherapee renders. It does not establish calibrated physical chart accuracy. See [methods and data](docs/technical/COLOR_PARITY.md).
 - Hair, glass, motion blur and complex backgrounds may need manual cutout refinement. PSD support also has explicit compatibility limits.
 - Agent image support depends on the client and model. A successful connection probe does not verify real-model visual understanding. Vision fallback services follow the configured image-upload permissions.

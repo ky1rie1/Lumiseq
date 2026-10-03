@@ -20,10 +20,14 @@ function deferredSample() {
 }
 
 beforeEach(() => {
+  vi.spyOn(getPlatformBridge(), 'releaseRawAsset').mockResolvedValue(undefined);
   defaultDocumentManager.closeAll();
   defaultCommandBus.clear();
 });
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  defaultDocumentManager.closeAll();
+  vi.restoreAllMocks();
+});
 
 describe('automatic white balance UI request ownership', () => {
   it('keeps newer B busy and error-free when cancelled A finishes first', async () => {

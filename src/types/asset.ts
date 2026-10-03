@@ -28,6 +28,7 @@ export interface PreviewRequest {
 }
 
 export interface IAssetManager {
+  subscribeRelease?(listener: (assetId: string) => void): () => void;
   /** Register an in-memory Blob/File and return an AssetHandle */
   registerBlob(blob: Blob, kind: AssetKind, name: string, dimensions?: { width?: number; height?: number }): Promise<AssetHandle>;
 

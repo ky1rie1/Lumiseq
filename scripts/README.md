@@ -17,6 +17,8 @@
 | `npm run clean` | Remove regenerable output; extra switches opt into models, releases or dependencies |
 | `check-project-size.ps1` | Report source, dependencies, native libraries and local caches |
 | `validate-chart-color.mjs` | Measure PNG color patches against explicit references |
+| `validate-float-editor.ps1 [-RawPath <camera-file>]` | Opt-in production WebView2 float transport, rendering, binary project and export checks; start Vite on port 5173 first. Reports stay outside the repository |
+| `validate-desktop-build.mjs <port> <commit>` | Read-only local package readiness and exact clean-source identity check; launch the package with a loopback WebView2 debug port first |
 | `mcp-external-smoke-test.cjs` | Opt-in smoke checks against a running authenticated MCP host |
 
 See [development](../docs/DEVELOPMENT.md), [releases](../docs/GITHUB_RELEASE.md), and [color measurement](../docs/technical/COLOR_MEASUREMENT.md).

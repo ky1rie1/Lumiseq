@@ -25,6 +25,7 @@ export function createEditDocument(params: {
   dpi?: number;
   layers?: Layer[];
   backgroundColor?: string;
+  renderingVersion?: 1 | 2;
 }): EditDocument {
   return {
     id: params.id || `doc_edit_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
@@ -41,6 +42,7 @@ export function createEditDocument(params: {
     guides: [],
     rulersVisible: true,
     editingTarget: 'layer',
+    ...(params.renderingVersion === 2 ? { renderingVersion: 2 as const, bitDepth: 32 as const, workingProfile: 'linear-srgb' as const } : {}),
     isDirty: false,
     updatedAt: Date.now(),
   };

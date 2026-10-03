@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased - Natural automatic color and high-precision layered editing
+
+- Replace new RAW automatic tone with eight-control natural color optimization in a cancellable Worker. Keep balanced and low-key scenes restrained; independently verify rounded recipes and sampled clipping before one command. Optional semantic AI proposals use the same local/neutral numerical checks and current overview/native ROI evidence.
+- Resize final RAW delivery in linear float before ICC encoding and quantization. Preserve signed/HDR intermediate values and original-coordinate filter support.
+- Add explicitly versioned Float32 image editing with native ICC-aware 8/16/32F source decoding, EXIF orientation and TIFF alpha handling. Correct linear exposure, continuous monotonic curves, normalized alpha-aware Gaussian filters and final composite resampling; retain legacy document interpretation.
+- Add native PNG16/TIFF16 and ICC output from bounded float export sessions. Reject silent high-precision PSD downgrades; display conversion remains explicitly 8-bit.
+- Preserve original ICC curve precision instead of quantizing matrix-profile working values through an intermediate table. Verify adjacent 16-bit codes through repeated delivery/reimport and actual WebView2 transport; correct fractional preview coverage and independently rounded resize dimensions.
+- Transfer original RAW and its editable recipe as a real smart object. Reopen parameters through Develop and apply them through one undoable command. Cache bounded native recipe stripes and release unused decoded leases when documents close.
+- Save high-precision projects as validated LSQ2 binary manifests and original blobs, excluding derived float caches. Recovery stores the immutable RAW only once and restores exact mask bytes. Add precision upgrade and automatic color to the existing UI, canonical AI tools and MCP path.
+- Decode captured RAW originals through bounded staging instead of rereading mutable disk files; reject missing captured originals and unsupported smart-object recipe versions before restoration.
+- Release native RAW buffers when the last open Develop document closes or replaces its handle, including repeated smart-object parameter sessions; retain shared references and avoid double release during cancellation.
+- Document precision, memory and quality limits in [editor precision](docs/technical/EDIT_PRECISION.md); keep generated evidence and private originals outside published source.
+
 ## Unreleased - RAW detail, automatic tone and workspace interactions
 
 - Correct the version-2 contrast pivot at 18% linear gray: positive contrast darkens lower tones and brightens upper tones rather than increasing the whole image's exposure. Refine highlight targeting and useful shadow lift consistently across CPU, GPU and native delivery.

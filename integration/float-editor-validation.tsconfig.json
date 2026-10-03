@@ -1,0 +1,4 @@
+{
+  "extends": "../tsconfig.json",
+  "include": ["float-editor-validation.ts", "../src/vite-env.d.ts"]
+}

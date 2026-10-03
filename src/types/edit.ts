@@ -257,7 +257,10 @@ export interface DevelopSmartObjectLayer extends BaseLayer {
   type: 'develop-smart-object';
   sourceRawUri: string;
   developSettings: DevelopSettings;
-  cachedRenderAssetId: string;
+  sourceAssetId?: string;
+  rawProcessingVersion?: 1 | 2;
+  rawCorrectionMode?: import('./develop').RawCorrectionMode;
+  cachedRenderAssetId?: string;
 }
 
 export type Layer =
@@ -294,6 +297,9 @@ export interface EditDocument {
   width: number;
   height: number;
   dpi: number;
+  renderingVersion?: 1 | 2;
+  bitDepth?: 32;
+  workingProfile?: 'linear-srgb';
   layers: Layer[]; // Layer order: index 0 is bottom-most
   selectedLayerId: string | null;
   selection: SelectionMask | null;

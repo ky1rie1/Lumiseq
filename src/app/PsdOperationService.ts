@@ -148,6 +148,7 @@ async function renderDocumentPixels(document: EditDocument, layer?: Layer): Prom
 }
 
 export async function saveLayeredPsd(document: EditDocument, path: string): Promise<void> {
+  if (document.renderingVersion === 2) throw new Error('当前 PSD 写入器仅支持 8 位。请保存 .lsq 高精度工程或导出 16 位 TIFF / PNG。');
   if (!/\.psd$/i.test(path)) throw new Error('请选择 .psd 文件路径。');
   document = structuredClone(document);
   return serializeWrites([document.id, path.toLowerCase()], async () => {

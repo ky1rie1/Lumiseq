@@ -8,6 +8,7 @@ export interface PreparedImageLayer {
 
 export interface ImageLayerDependencies {
   assets: IAssetManager;
+  decodeOriginal?: (id: string, blob: Blob) => Promise<{ width: number; height: number }>;
   /** Decode the registered blob and report its real pixel dimensions. */
   decode: (url: string) => Promise<{ width: number; height: number }>;
   /** Upload the blob into the render engine under the given asset id. */
@@ -25,6 +26,12 @@ export async function prepareImageLayer(
 ): Promise<PreparedImageLayer> {
   const handle = await dependencies.assets.registerBlob(blob, 'image', name);
   try {
+    if (dependencies.decodeOriginal) {
+      const decoded = await dependencies.decodeOriginal(handle.id, blob);
+      if (!decoded.width || !decoded.height) throw new Error(`无法读取图片尺寸：${name}`);
+      handle.width = decoded.width; handle.height = decoded.height;
+      return { id: handle.id, width: decoded.width, height: decoded.height };
+    }
     await dependencies.load(handle.id, blob);
     const url = dependencies.assets.getDisplayUrl(handle.id);
     const decoded = url ? await dependencies.decode(url) : null;

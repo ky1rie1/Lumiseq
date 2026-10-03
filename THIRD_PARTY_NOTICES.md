@@ -15,6 +15,7 @@ The root [MIT license](LICENSE) covers original Lumiseq code. It does not replac
 | ONNX Runtime Web | 1.30.0, [upstream](https://github.com/microsoft/onnxruntime) | MIT and upstream third-party notices, preserved in [model/runtime notices](licenses/model-runtime-notices.txt). That upstream list may describe components outside this WASM build. |
 | npm dependencies | Versions in `package-lock.json` | Individual package licenses. Release notices include installed production dependency license texts. |
 | Rust dependencies | Versions in `src-tauri/Cargo.lock` | Individual crate licenses. Release notices include local Cargo dependency license texts. |
+| moxcms | Pinned 0.8.1 with extended-range transforms; [upstream](https://github.com/awxkee/moxcms) | MIT / Apache-2.0; native float ICC conversion. License texts are included by the existing Cargo release-notice collector. |
 
 ## Editor interaction references
 

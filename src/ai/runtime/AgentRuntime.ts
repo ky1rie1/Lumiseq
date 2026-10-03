@@ -259,8 +259,13 @@ export class AgentRuntime {
     let expectedDocument = this.documentManager.getActiveDocument();
     let selectionChanged = false;
     let agentActivatingDocument = false;
+    let transitionActivations: (string | null)[] = [];
+    const transitionTools = new Set(['activate_document', 'create_document', 'edit_upgrade_precision', 'edit_raw_smart_object']);
     const stopWatchingDocuments = this.documentManager.subscribe(event => {
-      if (event.type === 'activated' && !agentActivatingDocument) selectionChanged = true;
+      if (event.type === 'activated') {
+        if (agentActivatingDocument) transitionActivations.push(event.documentId ?? null);
+        else selectionChanged = true;
+      }
     });
     const documentIsCurrent = () => !selectionChanged && this.documentManager.getActiveDocument() === expectedDocument;
     const run: AgentRun = {
@@ -493,7 +498,8 @@ export class AgentRuntime {
             } else {
               try {
                 toolContext.userApproved = tool.schema.riskLevel === 'dangerous';
-                agentActivatingDocument = ['activate_document', 'create_document'].includes(tc.name);
+                transitionActivations = [];
+                agentActivatingDocument = transitionTools.has(tool.schema.name);
                 toolResult = tool.schema.category==='read'
                   ? await budget.request(signal=>tool.execute({...toolContext,signal},tc.arguments,tc.id),controller.signal,false)
                   : await tool.execute(toolContext, tc.arguments, tc.id);
@@ -518,10 +524,17 @@ export class AgentRuntime {
             }
           }
 
-          if (toolResult.success && ['activate_document', 'create_document'].includes(tc.name)) {
+          const isTransition = !!tool && transitionTools.has(tool.schema.name);
+          const transitionTarget = toolResult.changedDocumentId;
+          const validTransition = isTransition && toolResult.success && !!transitionTarget &&
+            this.documentManager.getActiveDocument()?.id === transitionTarget &&
+            transitionActivations.every(id => id === transitionTarget) && !selectionChanged && !controller.signal.aborted;
+          if (isTransition && !validTransition && transitionActivations.length) selectionChanged = true;
+          if (validTransition) {
             expectedDocument = this.documentManager.getActiveDocument();
             activeWorkspace = expectedDocument?.kind ?? activeWorkspace;
             toolContext.currentWorkspace = activeWorkspace;
+            harness.policy.groups = [...new Set([...harness.policy.groups, ...(activeWorkspace === 'edit' ? ['layers', 'layout'] : ['parameters'])])];
             // A snapshot from the previous photo must not follow a document switch.
             toolContext.visionSnapshot = undefined;
             schemas = initialAgentSchemas(this.toolRegistry,activeWorkspace,harness.policy);

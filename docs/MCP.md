@@ -46,7 +46,11 @@ Lumiseq 的规范工具位于 `src/ai/tools/`。内置 AI 和外部 MCP 调用�
 | `studio_inspect_region` | 原文档坐标的区域观察或 1:1 细节 |
 | `studio_get_observation` | 按观察 ID 读取保留的图像或证据 |
 | `studio_get_develop_parameter_specs` | RAW 参数范围 |
-| `studio_auto_tone` | 按真实源样本联动六项影调，一步撤销，返回精度及检查证据 |
+| `studio_auto_tone` | 新版联动八项自然影调及色彩，旧版保留六项影调，一步撤销，返回精度及检查证据 |
+| `studio_edit_upgrade_precision` | 创建并激活独立 32F linear-sRGB 图像工程副本，保留原工程 |
+| `studio_edit_auto_color` | 高精度图像工程的 autoContrast / autoTone / autoColor 调整图层，一步撤销 |
+| `studio_edit_raw_smart_object` | open 打开原始 RAW 关联调色副本；apply 将参数应用回原图像工程并激活 |
+| `studio_develop_semantic_auto_color` | 使用已有整图及原尺寸区域证据显式提出八项自然色彩候选；不调用模型 |
 | `studio_upgrade_rendering` | 显式照片 ID 创建新版调色副本，保留 RAW 解码及坐标 |
 | `studio_reset_group` | 重置 basic / color / curves / detail / optics 参数组，一步撤销 |
 | `studio_develop_set_parameter` | 设置 RAW 参数，包括细节与 HSL |
@@ -66,6 +70,12 @@ Lumiseq 的规范工具位于 `src/ai/tools/`。内置 AI 和外部 MCP 调用�
 完整名称映射位于 `src/ai/tools/schemaAdapters/MCPSchemaAdapter.ts`，工具参数由注册表生成。不要依赖历史文档中的旧别名作为唯一接口。
 
 自动影调成功只表示参数已提交。先检查整图，再用同坐标原尺寸观察复核星点、人脸、边缘及高光；返回的 `detailVerification: "native-region-required"` 明确要求检查最终空间处理结果。旧工程的渲染版本默认是 1；`studio_upgrade_rendering` 创建独立版本 2 副本，不等同于会改变镜头坐标的 RAW 解码升级。
+
+新版自然自动色彩只调整 `exposure`、`contrast`、`highlights`、`shadows`、`whites`、`blacks`、`saturation`、`vibrance`；自动白平衡独立。`studio_edit_auto_color` 要求版本 2、32F、linear-sRGB：`autoContrast` 使用共同黑白锚点，`autoTone` 使用各通道曲线，`autoColor` 只在可靠中性证据支持时校色，否则明确退回对比度策略。它们创建可撤销调整图层，保留原始像素及透明度。
+
+精度升级及 RAW 智能对象 open/apply 会更新活动文档和工作区；后续调用使用返回的 `changedDocumentId`，先重新观察该文档。open 后等待 RAW 解码 ready；apply 是一次可撤销的参数更新，不栅格化原始素材。临时 RAW 路径在打开失败或调色副本关闭后清理，原始 RAW Blob 仍保留；这不意味着已有调色 JSON 格式自动成为可移植封装。
+
+语义候选先获取当前完整整图，再获取高光、肤色、噪声、纹理及主体的原尺寸 1:1、非近似区域观察。提交当前 `sourceId`、`documentRevision`、整图 `overviewObservationId`、区域观察 ID 及原文档像素坐标，`parameters` 必须恰好包含上述八项绝对值。过期源或版本拒绝提交；视觉缺失或失败可传 `visionStatus: "failed"` 省略参数，保留有效本地结果。候选舍入后必须同时通过安全检查并优于本地及中性参数；否则保留本地结果。观察和统计检查不证明应用后的空间细节，仍需复核最终整图及原尺寸区域。
 
 图层服务使用显式的 `documentId`、`layerId`。锁定错误返回 `LAYER_LOCKED`；修改子图层前必须解锁其父组。内容编辑、删除和重新归组遵守相同策略，可见性与只读查询仍可使用。复制只共享不可变素材引用，副本参数、图层及蒙版标识独立；对齐／翻转各产生一个可撤销命令。
 

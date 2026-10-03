@@ -29,6 +29,7 @@ import { ToneCurves } from '../../../types/develop';
 import { CurveEditor } from '../develop/CurveEditor';
 import { TextEffectsPanel } from './TextEffectsPanel';
 import { SMART_FILTER_LABELS, SMART_FILTER_TYPES } from '../../../filters/smartFilters';
+import { defaultRawSmartObjects } from '../../../smartobject/RawSmartObjectService';
 
 interface PropertiesPanelProps {
   document?: EditDocument;
@@ -132,6 +133,10 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
         </div>}
         {locked && <p className="text-[10px] text-white/45">图层或父组已锁定，请先解锁以修改。</p>}
         {operationError && <p role="alert" className="text-[10px] text-red-300">{operationError}</p>}
+        {_document && selectedLayer.type === 'develop-smart-object' && <button type="button" disabled={locked} className="button-secondary w-full" onClick={() => perform(async () => {
+          await defaultRawSmartObjects.openRecipe(_document.id, selectedLayer.id);
+          setWorkspace('develop');
+        })}><Sliders className="w-3.5 h-3.5"/>编辑 RAW 参数</button>}
         <fieldset disabled={locked}>
         {/* Blend Mode & Opacity */}
         <div className="grid grid-cols-2 gap-2 pt-1">

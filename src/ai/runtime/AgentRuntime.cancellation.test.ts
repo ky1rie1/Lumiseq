@@ -11,6 +11,48 @@ import { DevelopOperationService } from '../../develop/DevelopOperationService';
 import type { AgentMessage, CanonicalToolSchema } from '../types';
 import type { IAIProvider } from '../providers/IAIProvider';
 import { SetExposureCommand } from '../../commands/develop/SetExposureCommand';
+import { createEditDocument } from '../../document/EditDocument';
+
+it.each(['valid', 'failed', 'wrong-target', 'foreign-switch'])('accounts for RAW document transition: %s', async scenario => {
+  const { providers, docs, bus } = setup(), registry = new ToolRegistry();
+  const target = createEditDocument({ name: 'Composite', width: 16, height: 16, renderingVersion: 2 });
+  docs.openDocument(target, false);
+  registry.get('edit_raw_smart_object')!.execute = async (context, _args, toolCallId) => {
+    context.visionSnapshot = { stale: true } as any;
+    if (scenario === 'foreign-switch') docs.openDocument(createDevelopDocument({ sourceUri: 'user.jpg', fileName: 'User', isRaw: false }));
+    docs.setActiveDocument(target.id);
+    return { success: scenario !== 'failed', toolCallId, changedDocumentId: scenario === 'wrong-target' ? 'wrong' : target.id, renderRequired: true };
+  };
+  let calls = 0;
+  providers.getProvider = () => ({ chat: async (messages: AgentMessage[], schemas: CanonicalToolSchema[]) => {
+    if (++calls === 1) return { role: 'assistant', toolCalls: [{ id: 'apply', name: 'edit_raw_smart_object', arguments: { action: 'apply', documentId: docs.getActiveDocument()!.id } }] };
+    expect(messages[0].content).toContain('Workspace: edit');expect(messages[0].content).toContain('Composite');
+    expect(schemas.some(schema=>schema.name==='edit_auto_color')).toBe(true);
+    return { role: 'assistant', content: 'Done.' };
+  } }) as unknown as IAIProvider;
+  const result = await new AgentRuntime(providers, registry, new PermissionGuard(), new VisionInspector(), bus, docs).run('Apply RAW recipe', { includeVision: false });
+  expect(result.status).toBe(scenario === 'valid' ? 'partial' : 'cancelled');
+  expect(calls).toBe(scenario === 'valid' ? 2 : 1);
+});
+it('executes a real precision upgrade and refreshes targets without cancelling its own command', async () => {
+ const { providers, docs, bus, runtime } = setup(), original=createEditDocument({name:'Legacy',width:16,height:16});docs.openDocument(original);
+ let calls=0;providers.getProvider=()=>({chat:async(messages:AgentMessage[])=>{
+  if(++calls===1)return {role:'assistant',toolCalls:[{id:'upgrade',name:'edit_upgrade_precision',arguments:{documentId:original.id}}]};
+  expect(messages[0].content).toContain('Workspace: edit');return {role:'assistant',content:'Done'};
+ }}) as unknown as IAIProvider;
+ const run=await runtime.run('Upgrade legacy precision',{includeVision:false});expect(run.status).toBe('partial');
+ expect(docs.getActiveDocument()?.id).not.toBe(original.id);expect(run.commandIds).toEqual([bus.getHistory()[0].command.id]);
+ expect(docs.getEditDocument(original.id)?.renderingVersion).not.toBe(2);
+});
+it('cancels a later user switch after accepting its own RAW transition', async () => {
+ const {providers,docs,bus}=setup(), registry=new ToolRegistry(), target=createEditDocument({name:'Target',width:16,height:16,renderingVersion:2});docs.openDocument(target,false);
+ registry.get('edit_raw_smart_object')!.execute=async(_context,_args,toolCallId)=>{docs.setActiveDocument(target.id);return {success:true,toolCallId,changedDocumentId:target.id,renderRequired:true};};
+ let reached!:()=>void, finish!:(response:AgentMessage)=>void;const waiting=new Promise<void>(resolve=>{reached=resolve;});let calls=0;
+ providers.getProvider=()=>({chat:async()=>++calls===1?{role:'assistant',toolCalls:[{id:'apply',name:'edit_raw_smart_object',arguments:{action:'apply',documentId:'linked'}}]}:(reached(),new Promise<AgentMessage>(resolve=>{finish=resolve;}))}) as unknown as IAIProvider;
+ const runtime=new AgentRuntime(providers,registry,new PermissionGuard(),new VisionInspector(),bus,docs),pending=runtime.run('Apply RAW recipe',{includeVision:false});await waiting;
+ const user=createDevelopDocument({sourceUri:'user.jpg',fileName:'User',isRaw:false});docs.openDocument(user);finish({role:'assistant',content:'Done'});
+ expect((await pending).status).toBe('cancelled');expect(docs.getActiveDocument()?.id).toBe(user.id);
+});
 
 function setup() {
   const docs = new DocumentManager();

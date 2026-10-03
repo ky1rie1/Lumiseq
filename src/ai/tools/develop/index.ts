@@ -87,7 +87,7 @@ export class AutoDevelopToneTool extends CanonicalTool {
   constructor(private readonly service:(context:IToolContext)=>DevelopAutoToneService=
     context=>new DevelopAutoToneService(context.documentManager,context.commandBus)){super();}
   readonly schema:CanonicalToolSchema={name:'develop_auto_tone',
-    description:'Analyze bounded working float pixels and jointly set six tonal controls in one undo. Preserve white balance/color/masks. Inspect native details after processing stars/highlights; analysis is not a visual quality verdict.',
+    description:'Apply natural balanced automatic color from bounded working float samples: eight controls (exposure, contrast, highlights, shadows, whites, blacks, saturation, vibrance) in one undo for v2 photos. Legacy rendering retains six tonal controls. Preserve white balance, curves, HSL, masks and optics. Evidence includes rounded recipe safety; native spatial detail remains unverified until region inspection.',
     workspace:'develop',category:'develop',riskLevel:'normal',parameters:{type:'object',properties:{
       documentId:{type:'string',description:'Optional active develop document ID.'}},required:[]}};
   async execute(context:IToolContext,args:Record<string,any>,toolCallId:string):Promise<ToolResult>{

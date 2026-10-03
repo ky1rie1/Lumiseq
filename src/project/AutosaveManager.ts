@@ -4,6 +4,7 @@ import type { IDocumentManager, StudioDocument } from '../types/document';
 import type { AssetHandle, IAssetManager } from '../types/asset';
 import { defaultAssetManager } from '../assets/AssetManager';
 import { serializeWrites } from '../app/ProjectOperationService';
+import { validateDocument } from './ProjectSerializer';
 export interface RecoveryEntry {
     documentId: string;
     name: string;
@@ -68,10 +69,17 @@ function validateRecovery(entry: RecoveryEntry): void {
             checkReferences(child);
         } };
     checkReferences(doc);
+    if (doc.kind === 'edit')
+        validateDocument(doc, id => ids.has(id));
     if (entry.rawSource && (!(entry.rawSource instanceof Blob) || entry.rawSource.size > MAX_RAW_BYTES))
         throw new Error('Recovery RAW source exceeds the 256 MiB limit.');
-    if (doc.kind === 'develop' && doc.isRaw && !entry.rawSource?.size)
-        throw new Error('Recovery RAW source is missing.');
+    if (doc.kind === 'develop' && doc.isRaw) {
+        const original = entry.assets.find(asset => asset.handle.id === doc.originalRawAssetId)?.blob;
+        if (original && original.size > MAX_RAW_BYTES)
+            throw new Error('Recovery RAW source exceeds the 256 MiB limit.');
+        if (!original?.size && !entry.rawSource?.size)
+            throw new Error('Recovery RAW source is missing.');
+    }
     if (packageBytes(entry) > MAX_RECOVERY_BYTES || JSON.stringify(doc).length > 16 * 1024 * 1024)
         throw new Error('Recovery package exceeds the storage limit.');
 }
@@ -171,7 +179,7 @@ export class AutosaveManager {
                     const current = this.documents.getDocument(snapshot.id);
                     if (!current?.isDirty)
                         return;
-                    const rawSource = snapshot.kind === 'develop' && snapshot.isRaw ? await this.rawSource(snapshot) : undefined;
+                    const rawSource = snapshot.kind === 'develop' && snapshot.isRaw && !snapshot.originalRawAssetId ? await this.rawSource(snapshot) : undefined;
                     if (!this.documents.getDocument(snapshot.id)?.isDirty)
                         return;
                     const entry = { rawSource, documentId: snapshot.id, name: snapshot.kind === 'edit' ? snapshot.name : snapshot.fileName, timestamp: Date.now(), data: snapshot, assets: embedded };
@@ -226,8 +234,6 @@ export class AutosaveManager {
         try {
             for (const asset of entry.assets) {
                 const h = asset.handle;
-                if (doc.kind === 'develop' && h.kind === 'mask')
-                    continue;
                 const newHandle = h.kind === 'mask' ? await this.assets.registerMask(new Uint8ClampedArray(await asset.blob.arrayBuffer()), h.width!, h.height!, h.name) : await this.assets.registerBlob(asset.blob, h.kind, h.name, h);
                 remap.set(h.id, newHandle.id);
                 registered.push(newHandle.id);
@@ -239,6 +245,8 @@ export class AutosaveManager {
             const restored = replace(doc) as StudioDocument;
             if (restored.kind === 'develop') {
                 for (const mask of [restored.settings, ...(restored.settingsSnapshots ?? []).map(snapshot => snapshot.settings)].flatMap(settings => settings.masks)) {
+                    if (this.assets.hasAsset(mask.maskAssetId))
+                        continue;
                     const handle = await this.assets.registerMask(rasterizeDevelopMask(mask), 512, 512, mask.name);
                     registered.push(handle.id);
                     mask.maskAssetId = handle.id;
@@ -252,12 +260,15 @@ export class AutosaveManager {
                     restored.sourceAssetId = undefined;
                 }
                 if (restored.isRaw) {
-                    if (!entry.rawSource?.size)
+                    const original = restored.originalRawAssetId ? await this.assets.getBlob(restored.originalRawAssetId) : entry.rawSource;
+                    if (!original?.size)
                         throw new Error('Recovery RAW source is missing.');
-                    restored.sourceUri = await this.sources.stage(restored.fileName, entry.rawSource);
-                    const metadata = await this.sources.inspect(restored.sourceUri);
-                    this.sourceCache.clear();
-                    this.sourceCache.set(restored.id, { key: `${restored.sourceUri}:${metadata.sizeBytes}:${metadata.modifiedAt ?? ''}`, blob: entry.rawSource });
+                    if (!restored.originalRawAssetId) {
+                        const handle = await this.assets.registerBlob(original, 'image', restored.fileName, { width: restored.width, height: restored.height });
+                        registered.push(handle.id);
+                        restored.originalRawAssetId = handle.id;
+                    }
+                    restored.sourceUri = await this.sources.stage(restored.fileName, original);
                 }
             }
             restored.isDirty = true;
@@ -282,6 +293,12 @@ export class AutosaveManager {
     private async rawSource(doc: Extract<StudioDocument, {
         kind: 'develop';
     }>): Promise<Blob> {
+        if (doc.originalRawAssetId) {
+            const original = await this.assets.getBlob(doc.originalRawAssetId);
+            if (!original?.size || original.size > MAX_RAW_BYTES)
+                throw new Error('Recovery RAW original is missing or exceeds the 256 MiB limit.');
+            return original;
+        }
         const metadata = await this.sources.inspect(doc.sourceUri);
         if (!Number.isSafeInteger(metadata.sizeBytes) || metadata.sizeBytes <= 0 || metadata.sizeBytes > MAX_RAW_BYTES)
             throw new Error('Recovery RAW source must be between 1 byte and 256 MiB.');

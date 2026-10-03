@@ -5,6 +5,13 @@ import { ProjectOperationService } from './ProjectOperationService';
 import { savedProjectPaths } from './projectPaths';
 
 describe('ProjectOperationService', () => {
+  it('writes binary project bytes unchanged', async () => {
+    const bytes = new Uint8Array([76, 83, 81, 50, 0, 255, 128]);
+    const write = vi.fn();
+    const service = new ProjectOperationService({ serialize: async () => bytes, write, markSaved: () => {}, record: () => {} });
+    await service.save(createEditDocument({}), 'C:\\Work\\precision.lsq');
+    expect(write).toHaveBeenCalledWith('C:\\Work\\precision.lsq', bytes);
+  });
   it('serializes, writes and only then marks a document saved and records the project', async () => {
     const order: string[] = [];
     const service = new ProjectOperationService({

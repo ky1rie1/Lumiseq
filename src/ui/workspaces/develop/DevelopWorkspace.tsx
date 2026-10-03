@@ -69,6 +69,7 @@ import { previewPixelAt, srgb8ToLabD50, type ClippingCounts } from './colorInspe
 import { ReferencePreviewCache, referencePreviewKey } from './referencePreviewCache';
 import { defaultAssetManager } from '../../../assets/AssetManager';
 import './developWorkspace.css';
+import { defaultRawSmartObjects } from '../../../smartobject/RawSmartObjectService';
 
 const WB_SEGMENT_OPTIONS: { id: WhiteBalanceMode; label: string }[] = [
   { id: 'as-shot', label: '原照' },
@@ -540,13 +541,16 @@ export const DevelopWorkspace: React.FC<{ onExport: () => void }> = ({ onExport 
           </button>
 
           <button
-            onClick={handleTransferToEdit}
+            onClick={currentDoc.rawSmartObjectLink ? async () => {
+              try { await defaultRawSmartObjects.applyRecipe(currentDoc.id); setWorkspace('edit'); }
+              catch (error) { setStatusMessage(error instanceof Error ? error.message : String(error)); }
+            } : handleTransferToEdit}
             disabled={isExporting || !isPreviewPainted}
             className="flex items-center space-x-1 bg-purple-950/80 hover:bg-purple-900 text-purple-300 px-2.5 py-0.5 rounded border border-purple-800 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-            title="RAW 使用原始分辨率 PNG 转入；当前原生渲染器不支持的调整会给出提示"
+            title={currentDoc.rawSmartObjectLink ? '更新原图层的 RAW 参数，可撤销' : '保留原始 RAW 和调色参数转入智能对象'}
           >
             <ArrowRightLeft className="w-3 h-3 text-purple-400" />
-            <span>转入图像编辑</span>
+            <span>{currentDoc.rawSmartObjectLink ? '应用到智能对象' : '转入图像编辑'}</span>
           </button>
         </div>
       </div>

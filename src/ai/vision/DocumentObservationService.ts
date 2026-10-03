@@ -25,6 +25,7 @@ function canonical(value: unknown, omit?: Set<string>): unknown {
 function renderState(doc: StudioDocument): unknown {
   return doc.kind === 'edit'
     ? { kind: doc.kind, width: doc.width, height: doc.height, backgroundColor: doc.backgroundColor,
+      renderingVersion: doc.renderingVersion, bitDepth: doc.bitDepth, workingProfile: doc.workingProfile,
       cropRect: doc.cropRect, layers: canonical(doc.layers, layerUiFields) }
     : { kind: doc.kind, width: doc.width, height: doc.height, sourceUri: doc.sourceUri,
       sourceAssetId: doc.sourceAssetId, nativeAssetId: doc.nativeAssetId, previewAssetId: doc.previewAssetId,

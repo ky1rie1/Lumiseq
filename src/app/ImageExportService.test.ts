@@ -4,6 +4,15 @@ import { createEditDocument } from '../document/EditDocument';
 import { ImageExportService, getImageExportColorContract } from './ImageExportService';
 
 describe('image delivery export', () => {
+  it('delivers v2 edit through native float export with a truthful 16-bit contract', async () => {
+    const doc = createEditDocument({ renderingVersion: 2, width: 300, height: 200 });
+    const exportEditFloat = vi.fn(async () => 'C:\\out.tiff'), renderEdit = vi.fn();
+    const service = new ImageExportService({ exportRaw: vi.fn(), renderEdit, exportEditFloat, renderDevelop: vi.fn(), write: vi.fn() });
+    await service.export(doc, 'C:\\out.tiff', { format: 'tiff', outputProfile: 'display-p3', quality: 90, width: 150, height: 100 });
+    expect(exportEditFloat).toHaveBeenCalledWith(doc, { format: 'tiff', outputProfile: 'display-p3', quality: .9, width: 150, height: 100 }, 'C:\\out.tiff');
+    expect(renderEdit).not.toHaveBeenCalled();
+    expect(getImageExportColorContract(doc, 'png')).toEqual({ colorSpace: 'srgb', bitDepth: 16, backend: 'native', metadata: 'icc-profile' });
+  });
   it('reports actual native PNG16 and JPEG8 color contracts', () => {
     const raw = createDevelopDocument({ sourceUri: 'C:\\photo.nef', fileName: 'photo.nef', isRaw: true });
     raw.nativeAssetId = 'native-color';

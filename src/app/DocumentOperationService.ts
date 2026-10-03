@@ -37,7 +37,7 @@ export class DocumentOperationService {
     }
     const doc = kind === 'develop'
       ? createDevelopDocument({ fileName: name.trim(), sourceUri: `memory://${encodeURIComponent(name.trim())}`, isRaw: false, width, height })
-      : createEditDocument({ name: name.trim(), width, height, dpi: request.dpi, backgroundColor: request.backgroundColor });
+      : createEditDocument({ name: name.trim(), width, height, dpi: request.dpi, backgroundColor: request.backgroundColor, renderingVersion: 2 });
     this.manager.openDocument(doc, false);
     return this.activate(doc.id);
   }

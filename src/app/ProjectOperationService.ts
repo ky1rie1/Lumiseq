@@ -16,7 +16,7 @@ export function serializeWrites<T>(keys: string[], write: () => Promise<T>): Pro
 }
 
 export interface ProjectSavePorts {
-  serialize(document: StudioDocument): Promise<string>;
+  serialize(document: StudioDocument): Promise<string | Uint8Array>;
   write(path: string, bytes: Uint8Array): Promise<void>;
   markSaved(documentId: string, snapshot?: StudioDocument): void;
   record(path: string): void;
@@ -32,8 +32,8 @@ export class ProjectOperationService {
     }
     const snapshot = structuredClone(document);
     return serializeWrites([document.id, path.toLowerCase()], async () => {
-    const json = await this.ports.serialize({ ...snapshot, isDirty: false });
-    await this.ports.write(path, new TextEncoder().encode(json));
+    const payload = await this.ports.serialize({ ...snapshot, isDirty: false });
+    await this.ports.write(path, typeof payload === 'string' ? new TextEncoder().encode(payload) : payload);
     this.ports.markSaved(document.id, snapshot);
     savedProjectPaths.set(document.id, path);
     try {
@@ -49,7 +49,9 @@ export class ProjectOperationService {
 
 export const defaultProjectOperations = new ProjectOperationService({
   serialize: document => document.kind === 'edit'
-    ? defaultProjectSerializer.serialize(document, defaultAssetManager)
+    ? document.renderingVersion === 2
+      ? defaultProjectSerializer.serializeBinary(document, defaultAssetManager)
+      : defaultProjectSerializer.serialize(document, defaultAssetManager)
     : defaultDevelopProjectSerializer.serialize(document, defaultAssetManager),
   write: (path, bytes) => getPlatformBridge().writeBinaryFile(path, bytes),
   markSaved: (id, snapshot) => defaultDocumentManager.markSaved(id, snapshot),

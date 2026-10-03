@@ -65,6 +65,19 @@ export interface IImageEngine {
     viewport?: RenderViewport
   ): Promise<void>;
 
+  renderEditFloatRegion?(
+    document: EditDocument,
+    region: { x: number; y: number; width: number; height: number },
+    scale?: number,
+    signal?: AbortSignal
+  ): Promise<{ width: number; height: number; data: Float32Array }>;
+
+  exportEditFloat?(
+    document: EditDocument,
+    options: { format: 'jpeg' | 'png' | 'tiff'; quality: number; width: number; height: number; outputProfile?: 'srgb' | 'display-p3' },
+    path: string
+  ): Promise<string>;
+
   /**
    * Asynchronously compute real 256-bin RGB and Luminance histogram
    * from the actual rendered canvas or asset.

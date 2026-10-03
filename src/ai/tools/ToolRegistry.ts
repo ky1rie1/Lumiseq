@@ -1,6 +1,8 @@
 // src/ai/tools/ToolRegistry.ts
 import { CanonicalTool } from './CanonicalTool';
 import { creativeTools } from './system/creativeTools';
+import { UpgradeEditPrecisionTool, RawSmartObjectTool } from './edit/precisionTools';
+import { EditAutoColorTool, DevelopSemanticAutoColorTool } from './edit/autoColorTools';
 import { InspectDocumentTool, InspectRegionTool, GetObservationTool } from './system/observationTools';
 import { DiscoverToolsTool, ReadGuideTool } from './system/guideTools';
 import { CanonicalToolSchema } from '../types';
@@ -98,6 +100,10 @@ export class ToolRegistry {
   }
 
   private registerDefaults() {
+    this.register(new UpgradeEditPrecisionTool());
+    this.register(new RawSmartObjectTool());
+    this.register(new EditAutoColorTool());
+    this.register(new DevelopSemanticAutoColorTool());
     for (const tool of creativeTools()) this.register(tool);
     this.register(new DiscoverToolsTool(this));
     this.register(new ReadGuideTool(this));

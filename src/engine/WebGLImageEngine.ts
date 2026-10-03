@@ -30,6 +30,11 @@ import { SelectionUtils } from '../selection/SelectionUtils';
 import { normalizeRawSourceRect, type RawSourceRect } from './rawSourceRect';
 import { applySmartFilterStack } from '../filters/smartFilters';
 import { sampleRawLinearPixel, type RawLinearPixels } from '../platform/rawLinearPixels';
+import { FloatEditRenderer } from './editFloat/renderer';
+import type { FloatSource, LinearPixelBuffer } from './editFloat/types';
+import { bindFloatEditSourcesToDocuments, floatToDisplay, getFloatEditSources } from './FloatEditSources';
+import { getPlatformBridge } from '../platform';
+import { defaultDocumentManager } from '../document/DocumentManager';
 
 interface LoadedImageSource {
   element: HTMLImageElement | ImageBitmap | HTMLCanvasElement;
@@ -82,6 +87,7 @@ export class WebGLImageEngine implements IImageEngine {
   private renderingStatus: RenderingStatus = { backend: 'uninitialized' };
 
   private transientRenderBuffers = new Set<HTMLCanvasElement>();
+  private floatPreviewRequests = new WeakMap<HTMLCanvasElement, number>();
   constructor(private readonly assets: IAssetManager = defaultAssetManager, private readonly transientBuffers = false) {}
 
   /** Release caches owned by a temporary observation engine. */
@@ -173,6 +179,7 @@ export class WebGLImageEngine implements IImageEngine {
   }
 
   releaseAsset(assetId: string): void {
+    if (!this.transientBuffers) getFloatEditSources(this.assets).release(assetId);
     for (const key of this.qualityAnalysis.keys()) if(key.startsWith(`${assetId}:`)) this.qualityAnalysis.delete(key);
     const item = this.loadedSources.get(assetId);
     if (item && 'close' in item.element && typeof (item.element as any).close === 'function') {
@@ -691,6 +698,10 @@ export class WebGLImageEngine implements IImageEngine {
     layerOverrides?: Map<string, CanvasImageSource>,
     options?: { sourceRegion?: { x: number; y: number; width: number; height: number } }
   ): Promise<void> {
+    if (document.renderingVersion === 2) {
+      await this.renderFloatEdit(document, targetCanvas, viewport, previewBackdrop, layerOverrides, options?.sourceRegion);
+      return;
+    }
     const ctx = targetCanvas.getContext('2d');
     if (!ctx) throw new Error('Canvas render context is unavailable.');
 
@@ -754,6 +765,127 @@ export class WebGLImageEngine implements IImageEngine {
       } else await this.renderLayers(ctx, document.layers, document, IDENTITY, layerOverrides);
     }
     finally { ctx.restore(); }
+  }
+
+  private canvasFloatSource(element: CanvasImageSource, width: number, height: number): FloatSource {
+    return { width, height, getRegion: async region => {
+      const canvas = window.document.createElement('canvas');
+      canvas.width = region.width; canvas.height = region.height;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      if (!ctx) throw new Error('Display rasterization is unavailable.');
+      ctx.drawImage(element, -region.x, -region.y);
+      const bytes = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+      const data = new Float32Array(bytes.length);
+      for (let i = 0; i < bytes.length; i += 4) {
+        for (let c = 0; c < 3; c++) data[i + c] = srgbToLinear(bytes[i + c] / 255);
+        data[i + 3] = bytes[i + 3] / 255;
+      }
+      canvas.width = canvas.height = 1;
+      return { width: region.width, height: region.height, data };
+    } };
+  }
+
+  private floatRenderer(): FloatEditRenderer {
+    const sources = getFloatEditSources(this.assets);
+    return new FloatEditRenderer({
+      getSource: id => sources.getSource(id), getRawSource: layer => sources.getRawSource(layer),
+      getMask: async id => {
+        const h = this.assets.getHandle(id), data = await this.assets.getMask(id);
+        if (!h?.width || !h.height || !data) throw new Error('图层蒙版资源丢失。');
+        return { width: h.width, height: h.height, data };
+      },
+      getTextSource: async layer => {
+        const insets = textEffectInsets(layer);
+        const lines = layer.text.split(/\r\n|\r|\n/);
+        const textHeight = Math.max(layer.transform.height, lines.length * layer.fontSize * (layer.lineHeight ?? 1.2));
+        const measureCanvas = window.document.createElement('canvas'), measure = measureCanvas.getContext('2d');
+        if (!measure) throw new Error('Text measurement is unavailable.');
+        measure.font = `${layer.fontStyle ?? 'normal'} ${layer.fontWeight ?? 'normal'} ${layer.fontSize}px ${layer.fontFamily}`;
+        let left = 0, right = layer.transform.width;
+        for (const line of lines) {
+          const metrics = measure.measureText(line), width = metrics.width + Math.max(0, Array.from(line).length - 1) * layer.letterSpacing;
+          const start = layer.align === 'center' ? (layer.transform.width - width) / 2 : layer.align === 'right' ? layer.transform.width - width : 0;
+          left = Math.min(left, start - Math.max(0, metrics.actualBoundingBoxLeft));
+          right = Math.max(right, start + width + Math.max(0, metrics.actualBoundingBoxRight - metrics.width));
+        }
+        left = Math.floor(left - insets.left); right = Math.ceil(right + insets.right);
+        return { width: Math.max(1, right - left), height: Math.max(1, Math.ceil(textHeight + insets.top + insets.bottom)), originX: left, originY: -insets.top, getRegion: async region => {
+        const canvas = window.document.createElement('canvas'); canvas.width = region.width; canvas.height = region.height;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        if (!ctx) throw new Error('Text rasterization is unavailable.');
+        ctx.translate(-left - region.x, insets.top - region.y); drawTextLayer(ctx, layer);
+        const pixels = await this.canvasFloatSource(canvas, canvas.width, canvas.height).getRegion({ x: 0, y: 0, width: canvas.width, height: canvas.height });
+        canvas.width = canvas.height = 1; return pixels;
+      } }; },
+    });
+  }
+
+  async renderEditFloatRegion(document: EditDocument, region: { x: number; y: number; width: number; height: number }, scale = 1, signal?: AbortSignal): Promise<LinearPixelBuffer> {
+    if (document.renderingVersion !== 2) throw new Error('Float rendering requires a version 2 document.');
+    return this.floatRenderer().renderRegion(document, region, { scale, signal });
+  }
+
+  private async renderFloatEdit(doc: EditDocument, canvas: HTMLCanvasElement, viewport?: RenderViewport,
+    backdrop?: (ctx: CanvasRenderingContext2D, rect: { x: number; y: number; width: number; height: number }) => void,
+    overrides?: Map<string, CanvasImageSource>, region?: { x: number; y: number; width: number; height: number }): Promise<void> {
+    const ctx = canvas.getContext('2d'); if (!ctx) throw new Error('Canvas render context is unavailable.');
+    const request = (this.floatPreviewRequests.get(canvas) ?? 0) + 1; this.floatPreviewRequests.set(canvas, request);
+    const scale = region ? canvas.width / region.width : Math.min(canvas.width / doc.width, canvas.height / doc.height) * (viewport?.zoom ?? 1);
+    const scaleY = region ? canvas.height / region.height : scale;
+    const offsetX = region ? -region.x * scale : (canvas.width - doc.width * scale) / 2 + (viewport?.panX ?? 0);
+    const offsetY = region ? -region.y * scaleY : (canvas.height - doc.height * scaleY) / 2 + (viewport?.panY ?? 0);
+    const minX = Math.max(0, Math.floor(offsetX)), minY = Math.max(0, Math.floor(offsetY));
+    const maxX = Math.min(canvas.width, Math.ceil(offsetX + doc.width * scale)), maxY = Math.min(canvas.height, Math.ceil(offsetY + doc.height * scaleY));
+    const renderer = this.floatRenderer(), layerOverrides = new Map<string, FloatSource>();
+    for (const [id, element] of overrides ?? []) {
+      const source = element as { width?: number; height?: number; naturalWidth?: number; naturalHeight?: number };
+      layerOverrides.set(id, this.canvasFloatSource(element, source.naturalWidth ?? source.width ?? doc.width, source.naturalHeight ?? source.height ?? doc.height));
+    }
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (backdrop) backdrop(ctx, { x: offsetX, y: offsetY, width: doc.width * scale, height: doc.height * scaleY });
+    const tileCanvas = window.document.createElement('canvas');
+    for (let y = minY; y < maxY; y += 512) for (let x = minX; x < maxX; x += 512) {
+      if (this.floatPreviewRequests.get(canvas) !== request) return;
+      const left = Math.max(x, offsetX), top = Math.max(y, offsetY);
+      const right = Math.min(x + 512, maxX, offsetX + doc.width * scale);
+      const bottom = Math.min(y + 512, maxY, offsetY + doc.height * scaleY);
+      const rx = (left - offsetX) / scale, ry = (top - offsetY) / scaleY;
+      const rw = (right - left) / scale, rh = (bottom - top) / scaleY;
+      if (rw <= 0 || rh <= 0) continue;
+      const pixels = await renderer.renderRegion(doc, { x: rx, y: ry, width: rw, height: rh }, { scale, scaleY, layerOverrides });
+      if (this.floatPreviewRequests.get(canvas) !== request) return;
+      const image = new ImageData(floatToDisplay(pixels), pixels.width, pixels.height);
+      tileCanvas.width = pixels.width; tileCanvas.height = pixels.height;
+      const tileContext = tileCanvas.getContext('2d');
+      if (!tileContext) throw new Error('Preview tile context is unavailable.');
+      tileContext.putImageData(image, 0, 0);
+      ctx.drawImage(tileCanvas, left, top, right - left, bottom - top);
+      await new Promise<void>(resolve => setTimeout(resolve, 0));
+    }
+  }
+
+  async exportEditFloat(document: EditDocument, options: { format: 'jpeg' | 'png' | 'tiff'; quality: number; width: number; height: number; outputProfile?: 'srgb' | 'display-p3' }, path: string): Promise<string> {
+    const bridge = getPlatformBridge();
+    if (!bridge.beginEditExport || !bridge.appendEditExportBand || !bridge.finishEditExport || !bridge.cancelEditExport) throw new Error('高精度导出需要桌面版。');
+    const jobId = crypto.randomUUID(), renderer = this.floatRenderer();
+    await bridge.beginEditExport(jobId, path, options);
+    try {
+      const scaleX = options.width / document.width, scaleY = options.height / document.height;
+      const bandRows = Math.max(1, Math.min(64, Math.floor(6_000_000 / options.width)));
+      for (let y = 0; y < options.height; y += bandRows) {
+        const height = Math.min(bandRows, options.height - y), band = new Float32Array(options.width * height * 4);
+        for (let x = 0; x < options.width; x += 512) {
+          const width = Math.min(512, options.width - x);
+          const pixels = await renderer.renderRegion(document, { x: x / scaleX, y: y / scaleY, width: width / scaleX, height: height / scaleY }, { scale: scaleX, scaleY });
+          for (let row = 0; row < height; row++) band.set(pixels.data.subarray(row * width * 4, (row + 1) * width * 4), (row * options.width + x) * 4);
+        }
+        await bridge.appendEditExportBand(jobId, y, { width: options.width, height, data: band });
+        await new Promise<void>(resolve => setTimeout(resolve, 0));
+      }
+      const result = await bridge.finishEditExport(jobId);
+      if (result !== path) throw new Error('高精度导出未确认保存路径。');
+      return result;
+    } catch (error) { await bridge.cancelEditExport(jobId).catch(() => {}); throw error; }
   }
 
   private async renderLayers(
@@ -1126,3 +1258,4 @@ export class WebGLImageEngine implements IImageEngine {
 }
 
 export const defaultImageEngine = new WebGLImageEngine();
+bindFloatEditSourcesToDocuments(defaultDocumentManager, defaultAssetManager);

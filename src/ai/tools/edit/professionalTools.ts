@@ -55,20 +55,19 @@ export class CreatePaintLayerTool extends CanonicalTool {
 
     const w = args.width || doc.width;
     const h = args.height || doc.height;
-    const blankBytes = new Uint8ClampedArray(w * h * 4);
-    const buffer = blankBytes.buffer.slice(blankBytes.byteOffset, blankBytes.byteOffset + blankBytes.byteLength);
-    const blob = new Blob([buffer], { type: 'image/png' });
-    const handle = await defaultAssetManager.registerBlob(blob, 'image', args.name || '绘画图层', { width: w, height: h });
+    if (!Number.isSafeInteger(w) || !Number.isSafeInteger(h) || w <= 0 || h <= 0 || w * h > 150_000_000) {
+      return {success: false, toolCallId, renderRequired: false, error: {code: 'INVALID_ARGUMENT', message: 'Invalid paint layer dimensions.'}};
+    }
 
     const paintLayer = createPaintLayer({
       name: args.name || '绘画图层',
-      rasterAssetId: handle.id,
+      rasterAssetId: '',
       width: w,
       height: h,
     });
 
     const cmd = new CreateLayerCommand(doc.id, paintLayer, context.documentManager);
-    context.commandBus.execute(cmd);
+    await context.commandBus.execute(cmd);
 
     return {
       success: true,

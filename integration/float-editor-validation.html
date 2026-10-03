@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Float Editor Native Validation</title>
+  <style>
+    body { margin: 20px; background: #18191b; color: #eceeef; font: 13px monospace; }
+    canvas { width: 512px; max-width: 100%; height: 128px; image-rendering: pixelated; background: #fff; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+  </style>
+</head>
+<body>
+  <canvas id="display" width="8" height="2"></canvas>
+  <pre id="report">{"complete":false,"passed":false,"cases":[],"errors":[]}</pre>
+  <script type="module" src="./float-editor-validation.ts"></script>
+</body>
+</html>

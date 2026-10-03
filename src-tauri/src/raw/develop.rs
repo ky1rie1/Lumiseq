@@ -3,9 +3,10 @@ use crate::color::transform::{linear_to_srgb, srgb_to_linear};
 use crate::raw::spatial::{self, SpatialSettings};
 use crate::raw::types::RawError;
 use serde::{Deserialize, Serialize};
+#[cfg(test)]
 use std::io::Cursor;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NativeDevelopSettings {
     #[serde(default = "legacy_rendering_version")]
     pub rendering_version: u8,
@@ -65,11 +66,28 @@ fn default_sharpen_radius() -> f32 {
 struct ExportAssetLease<'a>(&'a str);
 impl Drop for ExportAssetLease<'_> {
     fn drop(&mut self) {
-        global_asset_registry().release(self.0);
+        if global_asset_registry().release(self.0){clear_raw_render_cache(self.0);}
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+const RAW_STRIPE_CACHE_LIMIT:usize=128*1024*1024;
+struct RawStripe {
+    asset_id:String,settings:std::sync::Arc<NativeDevelopSettings>,width:usize,height:usize,start:usize,
+    pixels:std::sync::Arc<Vec<[f32;3]>>,bytes:usize,
+}
+fn stripe_cache()->&'static std::sync::Mutex<std::collections::VecDeque<RawStripe>> {
+    static CACHE:std::sync::OnceLock<std::sync::Mutex<std::collections::VecDeque<RawStripe>>>=std::sync::OnceLock::new();
+    CACHE.get_or_init(||std::sync::Mutex::new(std::collections::VecDeque::new()))
+}
+pub(crate) fn clear_raw_render_cache(asset_id:&str){
+    if let Ok(mut cache)=stripe_cache().lock(){cache.retain(|entry|entry.asset_id!=asset_id);}
+    super::quality::clear_raw_analysis_cache(asset_id);
+}
+fn recipe_bytes(s:&NativeDevelopSettings)->usize {
+    std::mem::size_of::<NativeDevelopSettings>()+s.white_balance_mode.len()+s.curve_lut.len()*4+s.hsl.len()*12+s.masks.iter().map(|m|std::mem::size_of::<NativeDevelopMask>()+m.bytes.len()).sum::<usize>()
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NativeDevelopMask {
     pub width: usize,
     pub height: usize,
@@ -406,12 +424,12 @@ pub(super) fn base_tone_pixel(
     Ok(rgb)
 }
 
-pub fn export_raw_develop(
-    asset_id: &str,
-    settings: NativeDevelopSettings,
-    options: NativeExportOptions,
-    output_path: &str,
-) -> Result<String, RawError> {
+pub(crate) fn render_raw_develop_rows(
+    asset_id: &str, settings: NativeDevelopSettings,
+    row_range: Option<(usize,usize)>,
+    mut emit: impl FnMut(usize, &[[f32;3]]) -> Result<(),RawError>,
+) -> Result<(usize,usize), RawError> {
+    let options=NativeExportOptions{output_profile:Default::default(),format:"png".into(),quality:None,width:None,height:None};
     super::quality::base_matrix(&settings)?;
     let format_lower = options.format.to_lowercase();
     if !matches!(format_lower.as_str(), "png" | "jpeg" | "jpg" | "tiff" | "tif" | "tiff-f32") {
@@ -516,6 +534,7 @@ pub fn export_raw_develop(
             ));
         }
     }
+    if settings.masks.len()>32||settings.masks.iter().try_fold(0usize,|sum,m|sum.checked_add(m.bytes.len())).is_none_or(|n|n>64*1024*1024){return Err(RawError::DecodeFailed("RAW masks exceed 32 masks or 64 MiB".into()));}
 
     if !global_asset_registry().retain(asset_id) {
         return Err(RawError::DecodeFailed(format!(
@@ -532,24 +551,6 @@ pub fn export_raw_develop(
             Ok((width, height))
         })
         .ok_or_else(|| RawError::DecodeFailed("RAW export source is unavailable".to_string()))??;
-    let pixel_count = width * height; // validated checked multiplication above
-
-    // Keep precision through the last encode; PNG retains 16-bit channels.
-    let mut out_rgba = Vec::new();
-    let floating_output=format_lower=="tiff-f32";
-    if floating_output && (options.width.is_some_and(|w|w as usize!=width) || options.height.is_some_and(|h|h as usize!=height)) {
-        return Err(RawError::DecodeFailed("Linear float diagnostic export requires original dimensions".into()));
-    }
-    if !floating_output {out_rgba
-        .try_reserve_exact(pixel_count * 4)
-        .map_err(|_| RawError::OutOfMemory)?;}
-    if !floating_output {out_rgba.resize(pixel_count * 4, 0u16);}
-    let mut out_float=Vec::new();
-    if floating_output {
-        out_float.try_reserve_exact(pixel_count*4).map_err(|_|RawError::OutOfMemory)?;
-        out_float.resize(pixel_count*4,0f32);
-    }
-
     // Compute exposure multiplier: 2^EV (Photographic scale)
     let exposure_gain = 2.0f32.powf(settings.exposure);
     let custom_wb = if settings.white_balance_mode == "custom" {
@@ -567,7 +568,7 @@ pub fn export_raw_develop(
     let analysis =
         if settings.dehaze != 0.0 || settings.luma_denoise != 0.0 || settings.chroma_denoise != 0.0
         {
-            Some(super::quality::analyze_raw_spatial(asset_id, &settings)?)
+            Some(super::quality::cached_raw_spatial(asset_id, &settings)?)
         } else {
             None
         };
@@ -589,12 +590,20 @@ pub fn export_raw_develop(
     // Bound the floating-point working set to a stripe plus its read-only halo.
     // The halo is recomputed at stripe boundaries, avoiding seams without a
     // full-image f32 copy alongside the original and the output buffer.
+    let cache_recipe=if row_range.is_some()&&recipe_bytes(&settings)<=64*1024*1024{Some(std::sync::Arc::new(settings.clone()))}else{None};
     for stripe_start in (0..height).step_by(128) {
         let stripe_end = (stripe_start + 128).min(height);
+        if row_range.is_some_and(|(start,end)|stripe_end<=start||stripe_start>=end){continue;}
+        if let Some(recipe)=&cache_recipe {
+            let cached={let mut cache=stripe_cache().lock().map_err(|_|RawError::DecodeFailed("RAW stripe cache unavailable".into()))?;
+                if let Some(index)=cache.iter().position(|e|e.asset_id==asset_id&&e.width==width&&e.height==height&&e.start==stripe_start&&*e.settings==**recipe){let entry=cache.remove(index).unwrap();let pixels=entry.pixels.clone();cache.push_back(entry);Some(pixels)}else{None}};
+            if let Some(pixels)=cached {for y in stripe_start..stripe_end{if row_range.is_none_or(|(start,end)|y>=start&&y<end){emit(y,&pixels[(y-stripe_start)*width..(y-stripe_start+1)*width])?;}}continue;}
+        }
         let top = stripe_start.saturating_sub(halo);
         let bottom = (stripe_end + halo).min(height);
         // Borrow only while reading this stripe, allowing registry writes between
         // stripes and while the more expensive spatial/color processing runs.
+        if (bottom-top).checked_mul(width).and_then(|n|n.checked_mul(12*8)).is_none_or(|n|n>256*1024*1024){return Err(RawError::OutOfMemory);}
         let base = global_asset_registry()
             .with_asset(asset_id, |asset| {
                 let source=super::linear_source::LinearSource::new(asset)?;
@@ -634,9 +643,12 @@ pub fn export_raw_develop(
             base
         };
         let detailed=if settings.rendering_version==2 {Some(super::detail_v2::apply_image(&filtered,width,bottom-top,spatial))}else{None};
+        let mut prepared=Vec::new();
+        if cache_recipe.is_some(){prepared.try_reserve_exact((stripe_end-stripe_start)*width).map_err(|_|RawError::OutOfMemory)?;}
         for y in stripe_start..stripe_end {
+            if cache_recipe.is_none()&&row_range.is_some_and(|(start,end)|y<start||y>=end){continue;}
+            let mut output_row=Vec::with_capacity(width);
             for x in 0..width {
-                let i = y * width + x;
                 let mut rgb = if let Some(image)=&detailed {image[(y-top)*width+x]}else{spatial::apply(&filtered, width, height, top, x, y, spatial)};
                 if let Some(profile) = &analysis {
                     rgb = super::haze::apply(
@@ -683,115 +695,65 @@ pub fn export_raw_develop(
                     settings.vignette_midpoint,
                 );
 
-                let out_idx = i * 4;
-                let rgb=options.output_profile.convert(rgb);
-                for channel in 0..3 {
-                    if floating_output {out_float[out_idx+channel]=rgb[channel];}
-                    else {out_rgba[out_idx + channel] = (linear_to_srgb(rgb[channel]) * 65535.0)
-                        .round()
-                        .clamp(0.0, 65535.0)
-                        as u16;}
-                }
-                if floating_output {out_float[out_idx+3]=1.0;} else {out_rgba[out_idx + 3] = 65535;}
+                if rgb.iter().any(|v|!v.is_finite()){return Err(RawError::DecodeFailed("Nonfinite RAW recipe output".into()));}
+                output_row.push(rgb);
+            }
+            if row_range.is_none_or(|(start,end)|y>=start&&y<end){emit(y,&output_row)?;}
+            if cache_recipe.is_some(){prepared.extend(output_row);}
+        }
+        if let Some(recipe)=&cache_recipe {
+            let bytes=prepared.capacity()*12+recipe_bytes(recipe)+asset_id.len()+std::mem::size_of::<RawStripe>();
+            if bytes<=RAW_STRIPE_CACHE_LIMIT {
+                let mut cache=stripe_cache().lock().map_err(|_|RawError::DecodeFailed("RAW stripe cache unavailable".into()))?;
+                while cache.iter().map(|e|e.bytes).sum::<usize>()+bytes>RAW_STRIPE_CACHE_LIMIT||cache.len()>=16{cache.pop_front();}
+                cache.push_back(RawStripe{asset_id:asset_id.into(),settings:recipe.clone(),width,height,start:stripe_start,pixels:std::sync::Arc::new(prepared),bytes});
             }
         }
     }
-
     drop(source_lease);
-
-    if floating_output {
-        if options.width.is_some_and(|w|w as usize!=width) || options.height.is_some_and(|h|h as usize!=height) {
-            return Err(RawError::DecodeFailed("Linear float diagnostic export requires original dimensions".into()));
-        }
-        let mut writer=Cursor::new(Vec::new());
-        let mut encoder=tiff::encoder::TiffEncoder::new(&mut writer).map_err(|e|RawError::DecodeFailed(e.to_string()))?;
-        let mut image=encoder.new_image::<tiff::encoder::colortype::RGB32Float>(width as u32,height as u32).map_err(|e|RawError::DecodeFailed(e.to_string()))?;
-        image.extra_samples(&[tiff::tags::ExtraSamples::UnassociatedAlpha]).map_err(|e|RawError::DecodeFailed(e.to_string()))?;
-        image.encoder().write_tag(tiff::tags::Tag::IccProfile,options.output_profile.icc(true).as_slice()).map_err(|e|RawError::DecodeFailed(e.to_string()))?;
-        image.write_data(&out_float).map_err(|e|RawError::DecodeFailed(e.to_string()))?;
-        crate::filesystem::atomic_write(std::path::Path::new(output_path),writer.get_ref()).map_err(RawError::PermissionDenied)?;
-        return Ok(output_path.into());
-    }
-
-    // Encode to target format and write to output_path
-    let img = image::ImageBuffer::<image::Rgba<u16>, Vec<u16>>::from_raw(
-        width as u32,
-        height as u32,
-        out_rgba,
-    )
-    .ok_or_else(|| {
-        RawError::DecodeFailed("Failed to construct image buffer for export".to_string())
-    })?;
-    let img = match (options.width, options.height) {
-        (Some(target_width), Some(target_height))
-            if target_width != width as u32 || target_height != height as u32 =>
-        {
-            image::imageops::resize(
-                &img,
-                target_width,
-                target_height,
-                image::imageops::FilterType::Lanczos3,
-            )
-        }
-        _ => img,
-    };
-
-    let mut writer = Cursor::new(Vec::new());
-
-    if format_lower == "png" {
-        let mut info=png::Info::with_size(img.width(),img.height());
-        info.icc_profile=Some(std::borrow::Cow::Owned(options.output_profile.icc(false)));
-        let mut encoder = png::Encoder::with_info(&mut writer,info).map_err(|e|RawError::DecodeFailed(e.to_string()))?;
-        encoder.set_color(png::ColorType::Rgba);
-        encoder.set_depth(png::BitDepth::Sixteen);
-        encoder.set_source_gamma(png::ScaledFloat::from_scaled(45455));
-        let (red,green,blue)=if matches!(options.output_profile,super::output_profile::OutputProfile::DisplayP3) {
-            ((0.68,0.32),(0.265,0.69),(0.15,0.06))
-        } else {((0.64,0.33),(0.30,0.60),(0.15,0.06))};
-        encoder.set_source_chromaticities(png::SourceChromaticities::new(
-            (0.3127, 0.3290),
-            red,green,blue,
-        ));
-        let mut png_writer = encoder
-            .write_header()
-            .map_err(|e| RawError::DecodeFailed(format!("PNG header failed: {e}")))?;
-        let bytes: Vec<u8> = img
-            .as_raw()
-            .iter()
-            .flat_map(|sample| sample.to_be_bytes())
-            .collect();
-        png_writer
-            .write_image_data(&bytes)
-            .map_err(|e| RawError::DecodeFailed(format!("PNG encode failed: {e}")))?;
-        png_writer
-            .finish()
-            .map_err(|e| RawError::DecodeFailed(format!("PNG finish failed: {e}")))?;
-    } else if matches!(format_lower.as_str(),"tiff"|"tif") {
-        let mut encoder=tiff::encoder::TiffEncoder::new(&mut writer).map_err(|e|RawError::DecodeFailed(e.to_string()))?;
-        let mut image=encoder.new_image::<tiff::encoder::colortype::RGB16>(img.width(),img.height()).map_err(|e|RawError::DecodeFailed(e.to_string()))?;
-        image.extra_samples(&[tiff::tags::ExtraSamples::UnassociatedAlpha]).map_err(|e|RawError::DecodeFailed(e.to_string()))?;
-        image.encoder().write_tag(tiff::tags::Tag::IccProfile,options.output_profile.icc(false).as_slice()).map_err(|e|RawError::DecodeFailed(e.to_string()))?;
-        image.write_data(img.as_raw()).map_err(|e|RawError::DecodeFailed(e.to_string()))?;
-    } else {
-        let rgb_img = image::DynamicImage::ImageRgba16(img).to_rgb8();
-        let quality = options
-            .quality
-            .map(|value| (value * 100.0).round().clamp(1.0, 100.0) as u8)
-            .unwrap_or(75);
-        use image::ImageEncoder;
-        let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut writer, quality);
-        encoder
-            .set_icc_profile(options.output_profile.icc(false))
-            .map_err(|e| RawError::DecodeFailed(format!("JPEG color profile failed: {e}")))?;
-        encoder
-            .encode_image(&rgb_img)
-            .map_err(|e| RawError::DecodeFailed(format!("JPEG encode failed: {}", e)))?;
-    }
-
-    crate::filesystem::atomic_write(std::path::Path::new(output_path), writer.get_ref())
-        .map_err(RawError::PermissionDenied)?;
-    Ok(output_path.to_string())
+    Ok((width,height))
 }
+
+pub fn export_raw_develop(asset_id:&str,settings:NativeDevelopSettings,options:NativeExportOptions,output_path:&str)->Result<String,RawError>{
+    if !matches!(options.format.to_lowercase().as_str(),"png"|"jpeg"|"jpg"|"tiff"|"tif"|"tiff-f32") {return Err(RawError::DecodeFailed(format!("Unsupported RAW export format '{}'",options.format)));}
+    let _queued_lease=global_asset_registry().retain(asset_id).then(||ExportAssetLease(asset_id));
+    static EXPORT_LOCK:std::sync::Mutex<()>=std::sync::Mutex::new(());
+    static NEXT:std::sync::atomic::AtomicU64=std::sync::atomic::AtomicU64::new(0);
+    let _guard=EXPORT_LOCK.lock().map_err(|_|RawError::DecodeFailed("RAW export worker unavailable".into()))?;
+    // Validate the full recipe before source lookup, including legacy failure behavior.
+    render_raw_develop_rows(asset_id,settings.clone(),Some((0,0)),|_,_|Ok(()))?;
+    let format=match options.format.to_lowercase().as_str() {"jpg"=>"jpeg".into(),"tif"=>"tiff".into(),v=>v.to_string()};
+    if options.width.is_some()!=options.height.is_some(){return Err(RawError::DecodeFailed("Invalid RAW delivery dimensions".into()));}
+    let (sw,sh)=global_asset_registry().with_asset(asset_id,|a|(a.width,a.height)).ok_or_else(||RawError::DecodeFailed("RAW source unavailable".into()))?;
+    let width=options.width.map_or(sw,|v|v as usize);let height=options.height.map_or(sh,|v|v as usize);
+    let mut resampler=super::resample::LinearResampler::new(sw,sh,width,height)?;
+    let id=format!("raw-delivery-{}",NEXT.fetch_add(1,std::sync::atomic::Ordering::Relaxed));
+    crate::edit_image::begin_export(&id,output_path,crate::edit_image::ExportOptions{width,height,format,output_profile:options.output_profile,quality:options.quality.unwrap_or(0.75)}).map_err(RawError::DecodeFailed)?;
+    let result=render_raw_develop_rows(asset_id,settings,None,|y,row|{
+        resampler.push_into(y,row,|oy,output|{
+            let rgba:Vec<f32>=output.iter().flat_map(|p|[p[0],p[1],p[2],1.0]).collect();
+            crate::edit_image::append_export(&id,oy,crate::edit_image::packet(width,1,&rgba)).map_err(RawError::DecodeFailed)?;
+            Ok(())
+        })
+    });
+    if let Err(error)=result {let _=crate::edit_image::cancel_export(&id);return Err(error);}
+    crate::edit_image::finish_export(&id).map_err(RawError::DecodeFailed)
+}
+
+pub fn render_raw_develop_tile(asset_id:&str,settings:NativeDevelopSettings,x:usize,y:usize,width:usize,height:usize)->Result<Vec<u8>,RawError>{
+    static TILE_LOCK:std::sync::Mutex<()>=std::sync::Mutex::new(());
+    let _guard=TILE_LOCK.lock().map_err(|_|RawError::DecodeFailed("RAW tile worker unavailable".into()))?;
+    if !global_asset_registry().retain(asset_id){return Err(RawError::DecodeFailed("RAW source unavailable".into()));}
+    let _lease=ExportAssetLease(asset_id);
+    let (sw,sh)=global_asset_registry().with_asset(asset_id,|a|(a.width,a.height)).ok_or_else(||RawError::DecodeFailed("RAW source unavailable".into()))?;
+    crate::edit_image::validate_region(x,y,width,height,sw,sh).map_err(RawError::DecodeFailed)?;
+    let mut bytes=crate::edit_image::packet(width,height,&[]);
+    bytes.try_reserve_exact(width*height*16).map_err(|_|RawError::OutOfMemory)?;
+    render_raw_develop_rows(asset_id,settings,Some((y,y+height)),|_,row|{for p in &row[x..x+width]{for v in [p[0],p[1],p[2],1.0]{bytes.extend_from_slice(&v.to_le_bytes());}}Ok(())})?;
+    Ok(bytes)
+}
+#[cfg(test)]
+fn cached_stripes_for(id:&str)->usize{stripe_cache().lock().unwrap().iter().filter(|e|e.asset_id==id).count()}
 
 #[cfg(test)]
 mod tests {
@@ -801,6 +763,75 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static NEXT_TEST_ID: AtomicU64 = AtomicU64::new(1);
+
+    #[test]
+    fn raw_develop_tile_matches_complete_recipe_at_original_coordinates() {
+        let id=format!("develop-tile-{}",NEXT_TEST_ID.fetch_add(1,Ordering::Relaxed));
+        let width=24;let height=270;
+        let mut buffer=Vec::new();for y in 0..height{for x in 0..width{for v in [0.15+x as f32*0.002,0.2+y as f32*0.0001,0.3,1.0]{buffer.extend_from_slice(&v.to_le_bytes());}}}
+        global_asset_registry().register(NativeImageAsset{id:id.clone(),width,height,pixel_format:PixelFormat::RGBA32F,buffer,metadata:None,ref_count:1,created_at:0});
+        let mut recipe=settings();recipe.rendering_version=2;recipe.exposure=0.3;recipe.clarity=12.0;recipe.texture=14.0;recipe.sharpen_amount=20.0;recipe.dehaze=10.0;recipe.luma_denoise=10.0;recipe.vignette_amount=20.0;recipe.masks.push(NativeDevelopMask{width:2,height:2,bytes:vec![0,255,255,0],inverted:false,opacity:0.7,exposure:0.4,contrast:10.0,highlights:-12.0,shadows:4.0,temperature:6.0,saturation:5.0});
+        let bytes=render_raw_develop_tile(&id,recipe.clone(),3,125,7,9).unwrap();
+        let mut expected=Vec::new();render_raw_develop_rows(&id,recipe.clone(),None,|y,row|{if (125..134).contains(&y){for p in &row[3..10]{expected.extend([p[0],p[1],p[2],1.0]);}}Ok(())}).unwrap();
+        assert_eq!(bytes,crate::edit_image::packet(7,9,&expected));
+        assert_eq!(cached_stripes_for(&id),2,"Two prepared stripes must be shared across column tile requests");
+        let neighboring=render_raw_develop_tile(&id,recipe,1,125,2,9).unwrap();assert_eq!(neighboring.len(),12+2*9*16);assert_eq!(cached_stripes_for(&id),2);
+        assert!(render_raw_develop_tile(&id,settings(),usize::MAX,0,1,1).is_err());
+        global_asset_registry().release(&id);
+        clear_raw_render_cache(&id);assert_eq!(cached_stripes_for(&id),0);
+    }
+
+    #[test]
+    #[ignore="requires LUMISEQ_NATIVE_TILE_PROBE; writes timing JSON to external AppData"]
+    fn real_camera_raw_tile_cache_timing() {
+        let path=std::env::var("LUMISEQ_NATIVE_TILE_PROBE").expect("private source");
+        let start=std::time::Instant::now();let decoded=crate::raw::decode_raw("native-edit-tile-probe",&path,crate::raw::DemosaicQuality::Balanced).unwrap();let decode_ms=start.elapsed().as_millis();
+        let id=&decoded.asset_id;let _lease=ExportAssetLease(id);
+        let mut recipe=settings();recipe.rendering_version=2;recipe.texture=15.0;recipe.clarity=20.0;recipe.sharpen_amount=30.0;recipe.dehaze=10.0;recipe.luma_denoise=15.0;
+        let y=(decoded.height/2/128)*128;let size=256.min(decoded.width/2).min(decoded.height-y);
+        let start=std::time::Instant::now();let first=render_raw_develop_tile(id,recipe.clone(),0,y,size,size).unwrap();let first_ms=start.elapsed().as_millis();
+        let records=cached_stripes_for(id);
+        let start=std::time::Instant::now();let second=render_raw_develop_tile(id,recipe,size,y,size,size).unwrap();let adjacent_ms=start.elapsed().as_millis();
+        assert_eq!(cached_stripes_for(id),records);assert_eq!((&first[..4],&second[..4]),(b"LF32".as_slice(),b"LF32".as_slice()));assert_eq!(first.len(),12+size*size*16);
+        let report=serde_json::json!({"width":decoded.width,"height":decoded.height,"decodeMs":decode_ms,"firstTileMs":first_ms,"adjacentColumnTileMs":adjacent_ms,"cachedStripes":records,"stripeCacheBytes":stripe_cache().lock().unwrap().iter().filter(|entry|entry.asset_id==*id).map(|entry|entry.bytes).sum::<usize>(),"tileSize":size,"recipe":{"renderingVersion":2,"texture":15,"clarity":20,"sharpen":30,"dehaze":10,"lumaDenoise":15}});
+        let destination=std::path::PathBuf::from(crate::filesystem::get_app_paths().unwrap().logs_dir).join("natural-auto-float-editor-native-tile-timing.json");std::fs::write(&destination,serde_json::to_vec_pretty(&report).unwrap()).unwrap();println!("{}: {}",destination.display(),report);
+    }
+
+    #[test]
+    #[ignore="requires LUMISEQ_RAW_VALIDATION/REPORT_DIR; optional LUMISEQ_RAW_NATIVE_RECIPE; writes private full/resized 16/32-bit deliveries"]
+    fn real_camera_native_edit_precision_deliveries() {
+        let path=std::env::var("LUMISEQ_RAW_VALIDATION").expect("private original RAW");
+        let destination=std::path::PathBuf::from(std::env::var("LUMISEQ_RAW_REPORT_DIR").expect("external report directory"));
+        assert!(destination.is_absolute()&&!destination.starts_with(std::env::current_dir().unwrap()));std::fs::create_dir_all(&destination).unwrap();
+        let decoded=crate::raw::decode_raw("native-edit-delivery-probe",&path,crate::raw::DemosaicQuality::High).unwrap();let _lease=ExportAssetLease(&decoded.asset_id);
+        let mut recipe=settings();recipe.rendering_version=2;
+        if let Ok(file)=std::env::var("LUMISEQ_RAW_NATIVE_RECIPE"){let value:serde_json::Value=serde_json::from_slice(&std::fs::read(file).unwrap()).unwrap();recipe=serde_json::from_value(value.get("settings").unwrap_or(&value).clone()).unwrap();}
+        let tw=decoded.width.min(1920);let th=((decoded.height as f64*tw as f64/decoded.width as f64).round()as usize).max(1);let mut cases=Vec::new();
+        for (name,format,w,h) in [("full-16","tiff",decoded.width,decoded.height),("full-linear32","tiff-f32",decoded.width,decoded.height),("resized-16","png",tw,th),("resized-linear32","tiff-f32",tw,th)]{
+            let output=destination.join(format!("{name}.{}",if format=="png"{"png"}else{"tiff"}));let start=std::time::Instant::now();
+            export_raw_develop(&decoded.asset_id,recipe.clone(),NativeExportOptions{output_profile:super::super::output_profile::OutputProfile::DisplayP3,format:format.into(),quality:Some(0.9),width:Some(w as u32),height:Some(h as u32)},output.to_str().unwrap()).unwrap();let elapsed_ms=start.elapsed().as_millis();
+            let mut reader=image::ImageReader::open(&output).unwrap().with_guessed_format().unwrap().into_decoder().unwrap();use image::ImageDecoder;assert_eq!(reader.dimensions(),(w as u32,h as u32));assert_eq!(reader.color_type(),if format=="tiff-f32"{image::ColorType::Rgba32F}else{image::ColorType::Rgba16});
+            let icc=if format=="png"{reader.icc_profile().unwrap().unwrap()}else{let mut t=tiff::decoder::Decoder::new(std::io::BufReader::new(std::fs::File::open(&output).unwrap())).unwrap();assert_eq!(t.get_tag_u16_vec(tiff::tags::Tag::ExtraSamples).unwrap(),vec![2]);t.get_tag_u8_vec(tiff::tags::Tag::IccProfile).unwrap()};assert!(icc.windows(18).any(|v|v==b"Lumiseq Display P3")||icc.windows(25).any(|v|v==b"Lumiseq Linear Display P3"));
+            cases.push(serde_json::json!({"name":name,"format":format,"width":w,"height":h,"ms":elapsed_ms,"bytes":std::fs::metadata(&output).unwrap().len(),"iccBytes":icc.len(),"path":output}));
+        }
+        let report=serde_json::json!({"sourceWidth":decoded.width,"sourceHeight":decoded.height,"settings":recipe,"resampling":"normalized antialiased separable Lanczos3 in extended linear RGB","cases":cases});std::fs::write(destination.join("native-edit-precision-deliveries.json"),serde_json::to_vec_pretty(&report).unwrap()).unwrap();println!("{}",report);
+    }
+
+    #[test]
+    fn resized_delivery_averages_linear_light_before_encoding() {
+        let id = format!("linear_resize_{}", NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed));
+        let mut buffer = Vec::new();
+        for value in [0.0f32, 1.0] {
+            for sample in [value, value, value, 1.0] { buffer.extend_from_slice(&sample.to_le_bytes()); }
+        }
+        global_asset_registry().register(NativeImageAsset { id:id.clone(), width:2,height:1,pixel_format:PixelFormat::RGBA32F,buffer,metadata:None,ref_count:1,created_at:0 });
+        let path=std::env::temp_dir().join(format!("{id}.png"));
+        export_raw_develop(&id,settings(),NativeExportOptions{output_profile:Default::default(),format:"png".into(),quality:None,width:Some(1),height:Some(1)},path.to_str().unwrap()).unwrap();
+        let pixel=image::open(&path).unwrap().to_rgba16().get_pixel(0,0).0[0];
+        global_asset_registry().release(&id);
+        let _=std::fs::remove_file(path);
+        assert_eq!(pixel, (0.7353569830524495f64 * 65535.0).round() as u16);
+    }
 
     #[test]
     fn v2_contrast_pivots_and_tonal_controls_target_photographic_ranges() {

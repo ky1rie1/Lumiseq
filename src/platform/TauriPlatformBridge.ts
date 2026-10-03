@@ -17,6 +17,17 @@ import { defaultAppPaths } from '../core/AppPaths';
 
 export class TauriPlatformBridge implements IPlatformBridge {
   readonly isDesktop = true;
+  async decodeEditSource(bytes: Uint8Array) { return (await import('./EditNativeBridge')).decodeEditSource(bytes); }
+  async readEditSourceTile(assetId: string, x: number, y: number, width: number, height: number) { return (await import('./EditNativeBridge')).readEditSourceTile(assetId, x, y, width, height); }
+  async releaseEditSource(assetId: string) { return (await import('./EditNativeBridge')).releaseEditSource(assetId); }
+  async renderRawDevelopTile(assetId: string, settings: import('../app/nativeDevelopPayload').NativeDevelopPayload, x: number, y: number, width: number, height: number) { return (await import('./EditNativeBridge')).renderRawDevelopTile(assetId, settings, x, y, width, height); }
+  async beginEditExport(jobId: string, path: string, options: import('./EditNativeBridge').EditExportOptions) { return (await import('./EditNativeBridge')).beginEditExport(jobId, path, options); }
+  async appendEditExportBand(jobId: string, y: number, pixels: import('./EditNativeBridge').EditFloatPixels) { return (await import('./EditNativeBridge')).appendEditExportBand(jobId, y, pixels); }
+  async finishEditExport(jobId: string) { return (await import('./EditNativeBridge')).finishEditExport(jobId); }
+  async cancelEditExport(jobId: string) { return (await import('./EditNativeBridge')).cancelEditExport(jobId); }
+  async stageRawSource(fileName: string, blob: Blob): Promise<string> {
+    return (await import('./EditNativeBridge')).stageEditRawSource(fileName, new Uint8Array(await blob.arrayBuffer()));
+  }
 
   async checkRelease(etag?: string, requestId = 'release-manual'): Promise<import('../releases/releaseTypes').ReleaseQueryResult> {
     if (!this.isTauri()) return { status: 'unsupported' };

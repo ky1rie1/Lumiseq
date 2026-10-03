@@ -19,6 +19,7 @@ interface NativeDevelopMask {
 }
 
 export interface NativeDevelopPayload {
+  rendering_version?: 1 | 2;
   exposure: number;
   contrast: number;
   saturation: number;
@@ -55,6 +56,7 @@ export function getUnsupportedNativeDevelopFeatures(settings: DevelopSettings, _
 
 /** Resolve transient mask assets into an explicit native payload; never serialize pixels in document JSON. */
 export async function buildNativeDevelopPayload(settings: DevelopSettings, assets: IAssetManager): Promise<NativeDevelopPayload> {
+  if (settings.renderingVersion !== undefined && settings.renderingVersion !== 1 && settings.renderingVersion !== 2) throw new Error('Unsupported rendering version');
   const whiteBalanceMatrix = settings.whiteBalance.mode === 'auto' ? relativeWhiteBalanceMatrix(settings.whiteBalance) : undefined;
   const masks: NativeDevelopMask[] = [];
   for (const mask of settings.masks) {
@@ -72,6 +74,7 @@ export async function buildNativeDevelopPayload(settings: DevelopSettings, asset
     });
   }
   return {
+    rendering_version: settings.renderingVersion ?? 1,
     exposure: settings.exposure, contrast: settings.contrast,
     saturation: settings.saturation, highlights: settings.highlights, shadows: settings.shadows,
     whites: settings.whites, blacks: settings.blacks, vibrance: settings.vibrance,

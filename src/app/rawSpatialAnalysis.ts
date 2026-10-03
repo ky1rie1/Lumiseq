@@ -14,7 +14,7 @@ export interface RawSpatialAnalysis {
 }
 
 export function spatialBasePayload(s: DevelopSettings): NativeDevelopPayload {
-  return { exposure:s.exposure,contrast:s.contrast,highlights:s.highlights,shadows:s.shadows,
+  return { rendering_version:s.renderingVersion ?? 1,exposure:s.exposure,contrast:s.contrast,highlights:s.highlights,shadows:s.shadows,
     whites:s.whites,blacks:s.blacks,white_balance_mode:s.whiteBalance.mode,
     white_balance_matrix:s.whiteBalance.mode==='auto' ? relativeWhiteBalanceMatrix(s.whiteBalance) : undefined,
     temperature:s.whiteBalance.temperature,tint:s.whiteBalance.tint,

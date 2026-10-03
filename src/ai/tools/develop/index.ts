@@ -6,6 +6,7 @@ import { ColorChannel } from '../../../types/common';
 import { DevelopMask, ToneCurves, WhiteBalanceSettings } from '../../../types/develop';
 import { DEVELOP_SETTINGS_GROUPS, DevelopSettingsGroup } from '../../../develop/DevelopSettingsClipboard';
 import { PARAM_DEFINITIONS } from '../../../ui/shared/parameterDefinitions';
+import { DevelopAutoToneService } from '../../../develop/DevelopAutoToneService';
 
 const parameterIds: DevelopParameterId[] = [
   'exposure', 'contrast', 'highlights', 'shadows', 'whites', 'blacks', 'temperature', 'tint',
@@ -79,6 +80,57 @@ export class CreateRawVariantTool extends CanonicalTool {
       return { success: true, toolCallId, commandId: result.commandId, changedDocumentId: result.documentId,
         after: { documentId: result.documentId, rawProcessingVersion: 2, rawCorrectionMode: args.mode, rawState: 'unloaded' }, renderRequired: true };
     } catch (error) { return serviceError(toolCallId, error); }
+  }
+}
+
+export class AutoDevelopToneTool extends CanonicalTool {
+  constructor(private readonly service:(context:IToolContext)=>DevelopAutoToneService=
+    context=>new DevelopAutoToneService(context.documentManager,context.commandBus)){super();}
+  readonly schema:CanonicalToolSchema={name:'develop_auto_tone',
+    description:'Analyze bounded working float pixels and jointly set six tonal controls in one undo. Preserve white balance/color/masks. Inspect native details after processing stars/highlights; analysis is not a visual quality verdict.',
+    workspace:'develop',category:'develop',riskLevel:'normal',parameters:{type:'object',properties:{
+      documentId:{type:'string',description:'Optional active develop document ID.'}},required:[]}};
+  async execute(context:IToolContext,args:Record<string,any>,toolCallId:string):Promise<ToolResult>{
+    const doc=documentFor(context,args);
+    if(!doc)return errorResult(toolCallId,'NO_DOCUMENT','No active develop document found');
+    if(context.signal?.aborted)return errorResult(toolCallId,'STALE_SOURCE','Automatic tone cancelled');
+    if(context.documentManager.getActiveDocument()?.id!==doc.id)return errorResult(toolCallId,'STALE_SOURCE','Automatic tone requires the current document');
+    try {
+      const result=await this.service(context).applyWithResult(doc.id,()=>!context.signal?.aborted,context.signal);
+      if(!result)return errorResult(toolCallId,'STALE_SOURCE','Automatic tone cancelled because the document, source or task changed');
+      return {success:true,toolCallId,commandId:result.commandId,changedDocumentId:doc.id,
+        after:result,renderRequired:Boolean(result.commandId)};
+    }catch(error){return serviceError(toolCallId,error);}
+  }
+}
+
+export class UpgradeDevelopRenderingTool extends CanonicalTool {
+  readonly schema:CanonicalToolSchema={name:'develop_upgrade_rendering',
+    description:'Explicitly create a separate RAW copy using current tone/detail rendering. Preserve decoder, correction coordinates, masks and original document; the copy owns a fresh decode. Wait for ready before editing/observing it.',
+    workspace:'develop',category:'develop',riskLevel:'normal',parameters:{type:'object',properties:{
+      documentId:{type:'string',description:'Explicit source RAW document ID.'}},required:['documentId']}};
+  async execute(context:IToolContext,args:Record<string,any>,toolCallId:string):Promise<ToolResult>{
+    if(typeof args.documentId!=='string'||!args.documentId.trim())return errorResult(toolCallId,'INVALID_ARGUMENT','Explicit documentId is required');
+    try {
+      const result=await new DevelopOperationService(context.documentManager,context.commandBus).createRenderingUpgrade(args.documentId,context.signal);
+      return {success:true,toolCallId,commandId:result.commandId,changedDocumentId:result.documentId,
+        after:{documentId:result.documentId,renderingVersion:2,rawState:'unloaded'},renderRequired:true};
+    }catch(error){return serviceError(toolCallId,error);}
+  }
+}
+
+export class ResetDevelopGroupTool extends CanonicalTool {
+  readonly schema:CanonicalToolSchema={name:'develop_reset_group',description:'Reset one named photo settings group as one undo. Preserve masks and rendering/decoder versions; color includes white balance while retaining camera multipliers.',
+    workspace:'develop',category:'develop',riskLevel:'normal',parameters:{type:'object',properties:{
+      documentId:{type:'string',description:'Optional active develop document ID.'},
+      group:{type:'string',description:'Settings group.',enum:[...DEVELOP_SETTINGS_GROUPS]}},required:['group']}};
+  async execute(context:IToolContext,args:Record<string,any>,toolCallId:string):Promise<ToolResult>{
+    const doc=documentFor(context,args);if(!doc)return errorResult(toolCallId,'NO_DOCUMENT','No active develop document found');
+    if(!DEVELOP_SETTINGS_GROUPS.includes(args.group))return errorResult(toolCallId,'INVALID_ARGUMENT','Valid settings group is required');
+    try {
+      const commandId=new DevelopOperationService(context.documentManager,context.commandBus).resetGroup(doc.id,args.group,'ai');
+      return {success:true,toolCallId,commandId,changedDocumentId:doc.id,after:{group:args.group},renderRequired:true};
+    }catch(error){return serviceError(toolCallId,error);}
   }
 }
 

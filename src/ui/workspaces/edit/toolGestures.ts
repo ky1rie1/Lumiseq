@@ -1,5 +1,13 @@
 import type { Point, Rect, SelectionMode } from '../../../selection/types';
 
+/** Decide before pointer capture: a menu must never start a tool gesture. */
+export function canvasPointerIntent({ button, tool, space }: { button: number; tool: string; space: boolean }): 'context' | 'pan' | 'zoom' | 'tool' | 'ignore' {
+  if (button === 2) return 'context';
+  if (button !== 0 && button !== 1) return 'ignore';
+  if (button === 1 || space || tool === 'hand') return 'pan';
+  return tool === 'zoom' ? 'zoom' : 'tool';
+}
+
 export function resolveSelectionMode(configured: SelectionMode, shift: boolean, alt: boolean): SelectionMode {
   if (shift && alt) return 'intersect';
   if (shift) return 'add';

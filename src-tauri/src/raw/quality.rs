@@ -14,7 +14,7 @@ pub struct RawSpatialAnalysis {
 }
 
 pub(super) fn base_matrix(s: &NativeDevelopSettings) -> Result<[f32; 9], RawError> {
-    if !(-8.0..=8.0).contains(&s.exposure)
+    if !matches!(s.rendering_version,1|2) || !(-8.0..=8.0).contains(&s.exposure)
         || !(-100..=100).contains(&s.contrast)
         || [s.highlights, s.shadows, s.whites, s.blacks]
             .iter()

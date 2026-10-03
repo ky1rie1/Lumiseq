@@ -1,14 +1,17 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { forwardRef, useEffect, useId, useImperativeHandle, useRef, useState } from 'react';
 import { Copy, ClipboardPaste, MoreHorizontal } from 'lucide-react';
 import { defaultDevelopOperations } from '../../../develop/DevelopOperationService';
 import { DEVELOP_SETTINGS_GROUPS, DevelopSettingsGroup } from '../../../develop/DevelopSettingsClipboard';
 import { Modal } from '../../shared/Modal';
+import { defaultDocumentManager } from '../../../document/DocumentManager';
+import { guardMenuDocument } from '../../shared/contextMenuTargets';
 
 const labels: Record<DevelopSettingsGroup, string> = {
   basic: '基础影调', color: '质感、色彩与 HSL', curves: '色调曲线', detail: '细节与降噪', optics: '晕影',
 };
 
-export function DevelopSettingsMenu({ documentId, disabled, onStatus }: { documentId: string; disabled: boolean; onStatus: (message: string) => void }) {
+export interface DevelopSettingsMenuHandle { openPaste: () => void }
+export const DevelopSettingsMenu = forwardRef<DevelopSettingsMenuHandle, { documentId: string; disabled: boolean; onStatus: (message: string) => void }>(function DevelopSettingsMenu({ documentId, disabled, onStatus }, ref) {
   const operations = defaultDevelopOperations;
   const [snapshot, setSnapshot] = useState(() => operations.clipboard.getSnapshot());
   const [open, setOpen] = useState(false);
@@ -19,8 +22,18 @@ export function DevelopSettingsMenu({ documentId, disabled, onStatus }: { docume
   const menu = useRef<HTMLDivElement>(null);
   const menuId = useId();
   const [menuOpen, setMenuOpen] = useState(false);
+  const pasteTarget = useRef<object|null>(null);
   useEffect(() => operations.clipboard.subscribe(() => setSnapshot(operations.clipboard.getSnapshot())), [operations]);
   const closeMenu = () => menu.current?.hidePopover();
+  const openPaste = () => {
+    if (disabled || busy || !operations.clipboard.getSnapshot()) return;
+    pasteTarget.current = defaultDocumentManager.getDocument(documentId);
+    closeMenu(); setGroups([...DEVELOP_SETTINGS_GROUPS]); setIncludeWB(false); setError(''); setOpen(true);
+  };
+  useImperativeHandle(ref, () => ({ openPaste }));
+  useEffect(() => defaultDocumentManager.subscribe(event => {
+    if (event.type === 'activated' || event.type === 'closed') { closeMenu(); setOpen(false); pasteTarget.current = null; }
+  }), []);
   const copy = () => {
     closeMenu();
     try { const copied = operations.copySettings(documentId); onStatus(`已复制 ${copied.sourceName} 的调色参数`); }
@@ -28,7 +41,7 @@ export function DevelopSettingsMenu({ documentId, disabled, onStatus }: { docume
   };
   const paste = async () => {
     setBusy(true); setError('');
-    try { await operations.pasteSettings(documentId, groups, includeWB); setOpen(false); onStatus('调色参数已粘贴，可在历史中撤销'); }
+    try { guardMenuDocument(defaultDocumentManager, documentId, pasteTarget.current ?? undefined); await operations.pasteSettings(documentId, groups, includeWB); setOpen(false); onStatus('调色参数已粘贴，可在历史中撤销'); }
     catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setBusy(false); }
   };
@@ -45,7 +58,7 @@ export function DevelopSettingsMenu({ documentId, disabled, onStatus }: { docume
       }}><MoreHorizontal size={14} /></button>
       <div ref={menu} id={menuId} popover="auto" className="develop-settings-options" onToggle={() => setMenuOpen(menu.current?.matches(':popover-open') ?? false)}>
         <button type="button" disabled={disabled || busy} onClick={copy}><Copy size={13} />复制调色参数</button>
-        <button type="button" disabled={disabled || busy || !snapshot} onClick={() => { closeMenu(); setGroups([...DEVELOP_SETTINGS_GROUPS]); setIncludeWB(false); setError(''); setOpen(true); }}><ClipboardPaste size={13} />粘贴调色参数…</button>
+        <button type="button" disabled={disabled || busy || !snapshot} onClick={openPaste}><ClipboardPaste size={13} />粘贴调色参数…</button>
         <p>{snapshot ? `来源：${snapshot.sourceName}` : '先从一张照片复制参数'}</p>
       </div>
     </div>
@@ -64,4 +77,4 @@ export function DevelopSettingsMenu({ documentId, disabled, onStatus }: { docume
       </div>
     </Modal>
   </>;
-}
+});

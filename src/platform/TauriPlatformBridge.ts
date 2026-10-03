@@ -18,6 +18,29 @@ import { defaultAppPaths } from '../core/AppPaths';
 export class TauriPlatformBridge implements IPlatformBridge {
   readonly isDesktop = true;
 
+  async checkRelease(etag?: string, requestId = 'release-manual'): Promise<import('../releases/releaseTypes').ReleaseQueryResult> {
+    if (!this.isTauri()) return { status: 'unsupported' };
+    const { invoke } = await import('@tauri-apps/api/core');
+    return invoke('check_release', { etag, requestId });
+  }
+  async cancelReleaseCheck(requestId: string): Promise<void> {
+    if (!this.isTauri()) return;
+    const { invoke } = await import('@tauri-apps/api/core'); await invoke('cancel_release_check', { requestId });
+  }
+  async openReleasePage(url: string): Promise<void> {
+    const { trustedReleasePage } = await import('../releases/releases');
+    if (!trustedReleasePage(url)) throw new Error('Untrusted release page');
+    if (!this.isTauri()) throw new Error('Release pages require the desktop host');
+    const { invoke } = await import('@tauri-apps/api/core'); await invoke('open_release_page', { url });
+  }
+  async getBuildIdentity(): Promise<import('../releases/releaseTypes').BuildIdentity> {
+    if (!this.isTauri()) { const { APP_VERSION } = await import('../core/brand'); return { version: APP_VERSION, commit: 'browser-preview', channel: 'development', dirty: true }; }
+    const { invoke } = await import('@tauri-apps/api/core'); return invoke('get_build_identity');
+  }
+  async getRawToneSamples(assetId: string): Promise<NonNullable<Awaited<ReturnType<NonNullable<IPlatformBridge['getRawToneSamples']>>>>> {
+    const { invoke } = await import('@tauri-apps/api/core'); return invoke('get_raw_tone_samples', { assetId });
+  }
+
   async openFileDialog(options?: OpenFileOptions): Promise<SelectedFile | null> {
     try {
       const dialog = await import('@tauri-apps/plugin-dialog');

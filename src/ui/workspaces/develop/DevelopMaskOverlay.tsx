@@ -75,7 +75,7 @@ export const DevelopMaskOverlay: React.FC<Props> = ({ mask, showOverlay, drawMod
       className={`absolute inset-0 w-full h-full ${drawMode ? 'cursor-crosshair' : 'pointer-events-none'}`}
       style={{ touchAction: drawMode ? 'none' : 'auto' }}
       onPointerDown={(event) => {
-        if (!drawMode) return;
+        if (!drawMode || event.button !== 0) return;
         event.currentTarget.setPointerCapture(event.pointerId);
         const point = pointForEvent(event);
         draftRef.current = { start: point, points: [point] };

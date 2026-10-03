@@ -85,6 +85,8 @@ export interface DevelopMask {
 }
 
 export interface DevelopSettings {
+  /** Rendering math; omitted means legacy 1, independent of RAW decoding. */
+  renderingVersion?: 1 | 2;
   version?: number;       // Schema version (v3)
 
   // Basic Toning

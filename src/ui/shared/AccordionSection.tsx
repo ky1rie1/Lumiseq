@@ -3,6 +3,8 @@
 
 import React, { useState } from 'react';
 import { ChevronDown, ChevronRight, RotateCcw } from 'lucide-react';
+import { useContextMenu, type ContextMenuItem } from './ContextMenu';
+import { useAppStore } from '../../stores/useAppStore';
 
 interface AccordionSectionProps {
   id: string;
@@ -13,6 +15,8 @@ interface AccordionSectionProps {
   resetTooltip?: string;
   badge?: string;
   children: React.ReactNode;
+  contextItems?: () => ContextMenuItem[];
+  contextScope?: string;
 }
 
 export const AccordionSection: React.FC<AccordionSectionProps> = ({
@@ -24,7 +28,11 @@ export const AccordionSection: React.FC<AccordionSectionProps> = ({
   resetTooltip = '重置此模块参数',
   badge,
   children,
+  contextItems,
+  contextScope,
 }) => {
+  const status = useAppStore(state => state.setStatusMessage);
+  const menu = useContextMenu(contextScope, status);
   // Store user collapsed preference in sessionStorage so switching photos doesn't reset it
   const storageKey = `accordion_open_${id}`;
   const [isOpen, setIsOpen] = useState<boolean>(() => {
@@ -48,7 +56,10 @@ export const AccordionSection: React.FC<AccordionSectionProps> = ({
   return (
     <section className="accordion-section border-t border-studio-800/80 pt-2.5 pb-1 select-none">
       {/* Header */}
-      <div className="accordion-section-header flex items-center justify-between py-1 group">
+      {menu.node}
+      <div className="accordion-section-header flex items-center justify-between py-1 group"
+        onContextMenu={event => { if (contextItems) menu.open(event, contextItems(), title); }}
+        onKeyDown={event => { if (contextItems) menu.key(event, contextItems, title); }}>
         <button
           onClick={toggleOpen}
           className="flex items-center space-x-1.5 text-xs font-medium text-studio-200 hover:text-white transition-colors cursor-pointer flex-1 text-left"

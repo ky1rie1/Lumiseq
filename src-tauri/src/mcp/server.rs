@@ -55,8 +55,30 @@ mod security_tests {
         });
         client.write_all(request.as_bytes()).unwrap();
         client.shutdown(std::net::Shutdown::Write).unwrap();
+        client.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        // A rejected request may close with unread input on Windows. Read the
+        // complete HTTP message rather than requiring a graceful socket EOF.
+        let mut reader = BufReader::new(client);
         let mut response = String::new();
-        client.read_to_string(&mut response).unwrap();
+        let mut content_length = None;
+        loop {
+            let mut line = String::new();
+            assert!(reader.read_line(&mut line).unwrap() > 0, "Incomplete HTTP response headers");
+            assert!(response.len() + line.len() < 8192, "Oversized response headers");
+            response.push_str(&line);
+            if line == "\r\n" { break; }
+            if let Some((name, value)) = line.split_once(':') {
+                if name.eq_ignore_ascii_case("content-length") {
+                    assert!(content_length.is_none(), "Duplicate response length");
+                    content_length = Some(value.trim().parse::<usize>().unwrap());
+                }
+            }
+        }
+        let length = content_length.expect("Response must declare body length");
+        assert!(length <= 1_048_576, "Oversized response body");
+        let mut body = vec![0; length];
+        reader.read_exact(&mut body).unwrap();
+        response.push_str(std::str::from_utf8(&body).unwrap());
         worker.join().unwrap();
         (response, count.load(Ordering::SeqCst))
     }

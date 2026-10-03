@@ -4,6 +4,7 @@ import { UploadCloud } from 'lucide-react';
 import { useAppStore } from './stores/useAppStore';
 import { useHistoryStore } from './stores/useHistoryStore';
 import { TopMenuBar } from './ui/layout/TopMenuBar';
+import { ReleaseStartup } from './releases/ReleaseStartup';
 import { HomeWorkspace } from './ui/workspaces/home/HomeWorkspace';
 import { NewProjectDialog } from './ui/workspaces/home/NewProjectDialog';
 import { DevelopWorkspace } from './ui/workspaces/develop/DevelopWorkspace';
@@ -278,6 +279,7 @@ export const App: React.FC = () => {
     onDrop={handleDrop}>
     {isDragOver && <div className="absolute inset-0 z-50 bg-blue-950/80 backdrop-blur-xs flex flex-col items-center justify-center border-4 border-dashed border-blue-500 pointer-events-none"><UploadCloud className="w-16 h-16 text-blue-400 mb-2 animate-bounce" /><h2 className="text-xl font-bold text-white">拖入照片或项目</h2><p className="text-sm text-blue-200 mt-1">自动进入适合 RAW 或图像的工作区</p></div>}
     <TopMenuBar actions={studioActions} />
+    <ReleaseStartup />
     <div className="flex-1 flex overflow-hidden relative"><div className="flex-1 overflow-hidden relative">
       {currentWorkspace === 'home' && <HomeWorkspace actions={studioActions} />}
       {(visitedWorkspaces.develop || currentWorkspace === 'develop') && <div className="absolute inset-0" hidden={currentWorkspace !== 'develop'}><DevelopWorkspace onExport={() => setExportOpen(true)} /></div>}

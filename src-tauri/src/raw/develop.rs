@@ -7,6 +7,8 @@ use std::io::Cursor;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NativeDevelopSettings {
+    #[serde(default = "legacy_rendering_version")]
+    pub rendering_version: u8,
     pub exposure: f32,   // EV
     pub contrast: i32,   // -100 to 100
     pub saturation: i32, // -100 to 100
@@ -51,6 +53,7 @@ pub struct NativeDevelopSettings {
     pub masks: Vec<NativeDevelopMask>,
 }
 
+fn legacy_rendering_version() -> u8 { 1 }
 fn default_vignette_midpoint() -> f32 {
     50.0
 }
@@ -364,6 +367,15 @@ fn sample_mask(mask: &NativeDevelopMask, x: usize, y: usize, width: usize, heigh
     (top * (1.0 - fy) + bottom * fy) / 255.0
 }
 
+pub(super) fn tone_luminance_v2(mut y:f32,s:&NativeDevelopSettings)->f32 {
+ y *= (s.blacks/100.0*std::f32::consts::LN_2/(1.0+y/0.18)).exp();
+ y *= (s.whites/100.0*std::f32::consts::LN_2*y/(y+0.5)).exp();
+ if s.contrast!=0 {y=0.18*((y/0.18).ln_1p()*2.0f32.powf(s.contrast as f32/100.0)).exp_m1();}
+ y *= (s.shadows/100.0*0.75/(1.0+y/0.18)).exp();
+ if s.highlights<0.0 {let d=(y-0.35).max(0.0);y=y.min(0.35)+d/(1.0-s.highlights/100.0*1.5*d);}
+ else if s.highlights>0.0 {y*=1.0+s.highlights/100.0*0.75*y/(y+0.55);}y
+}
+
 pub(super) fn base_tone_pixel(
     source: &super::linear_source::LinearSource<'_>,
     index: usize,
@@ -376,6 +388,11 @@ pub(super) fn base_tone_pixel(
     apply_white_balance(&mut rgb, white_balance);
     for channel in &mut rgb {
         *channel *= exposure_gain;
+    }
+    if settings.rendering_version == 2 {
+        let y=luminance(rgb);let m=y.abs();let target=tone_luminance_v2(m,settings);
+        let gain=if m>1e-12 {target/m}else{2.0f32.powf(settings.contrast as f32/100.0)*(settings.blacks/100.0*std::f32::consts::LN_2+settings.shadows/100.0*0.75).exp()};
+        return Ok(rgb.map(|v|v*gain));
     }
     let base_luma = luminance(rgb);
     apply_tone(&mut rgb, settings.shadows, settings.highlights);
@@ -555,9 +572,9 @@ pub fn export_raw_develop(
         sharpen_amount: settings.sharpen_amount,
         sharpen_radius: settings.sharpen_radius,
         sharpen_threshold: settings.sharpen_threshold,
-        scale: (width as f32 / 1920.0).max(height as f32 / 1080.0).max(1.0),
+        scale: if settings.rendering_version==2 {1.0} else {(width as f32 / 1920.0).max(height as f32 / 1080.0).max(1.0)},
     };
-    let halo = spatial.halo()
+    let halo = (if settings.rendering_version==2 {spatial.halo_v2()}else{spatial.halo()})
         + if settings.luma_denoise != 0.0 || settings.chroma_denoise != 0.0 {
             super::wavelet::NATIVE_HALO
         } else {
@@ -611,10 +628,11 @@ pub fn export_raw_develop(
         } else {
             base
         };
+        let detailed=if settings.rendering_version==2 {Some(super::detail_v2::apply_image(&filtered,width,bottom-top,spatial))}else{None};
         for y in stripe_start..stripe_end {
             for x in 0..width {
                 let i = y * width + x;
-                let mut rgb = spatial::apply(&filtered, width, height, top, x, y, spatial);
+                let mut rgb = if let Some(image)=&detailed {image[(y-top)*width+x]}else{spatial::apply(&filtered, width, height, top, x, y, spatial)};
                 if let Some(profile) = &analysis {
                     rgb = super::haze::apply(
                         rgb,
@@ -680,12 +698,12 @@ pub fn export_raw_develop(
         if options.width.is_some_and(|w|w as usize!=width) || options.height.is_some_and(|h|h as usize!=height) {
             return Err(RawError::DecodeFailed("Linear float diagnostic export requires original dimensions".into()));
         }
-        use image::ImageEncoder;
         let mut writer=Cursor::new(Vec::new());
-        let mut encoder=image::codecs::tiff::TiffEncoder::new(&mut writer);
-        encoder.set_icc_profile(options.output_profile.icc(true)).map_err(|e|RawError::DecodeFailed(e.to_string()))?;
-        let bytes:Vec<u8>=out_float.into_iter().flat_map(f32::to_ne_bytes).collect();
-        encoder.write_image(&bytes,width as u32,height as u32,image::ExtendedColorType::Rgba32F).map_err(|e|RawError::DecodeFailed(e.to_string()))?;
+        let mut encoder=tiff::encoder::TiffEncoder::new(&mut writer).map_err(|e|RawError::DecodeFailed(e.to_string()))?;
+        let mut image=encoder.new_image::<tiff::encoder::colortype::RGB32Float>(width as u32,height as u32).map_err(|e|RawError::DecodeFailed(e.to_string()))?;
+        image.extra_samples(&[tiff::tags::ExtraSamples::UnassociatedAlpha]).map_err(|e|RawError::DecodeFailed(e.to_string()))?;
+        image.encoder().write_tag(tiff::tags::Tag::IccProfile,options.output_profile.icc(true).as_slice()).map_err(|e|RawError::DecodeFailed(e.to_string()))?;
+        image.write_data(&out_float).map_err(|e|RawError::DecodeFailed(e.to_string()))?;
         crate::filesystem::atomic_write(std::path::Path::new(output_path),writer.get_ref()).map_err(RawError::PermissionDenied)?;
         return Ok(output_path.into());
     }
@@ -744,11 +762,11 @@ pub fn export_raw_develop(
             .finish()
             .map_err(|e| RawError::DecodeFailed(format!("PNG finish failed: {e}")))?;
     } else if matches!(format_lower.as_str(),"tiff"|"tif") {
-        use image::ImageEncoder;
-        let mut encoder=image::codecs::tiff::TiffEncoder::new(&mut writer);
-        encoder.set_icc_profile(options.output_profile.icc(false)).map_err(|e|RawError::DecodeFailed(e.to_string()))?;
-        let bytes:Vec<u8>=img.as_raw().iter().flat_map(|v|v.to_ne_bytes()).collect();
-        encoder.write_image(&bytes,img.width(),img.height(),image::ExtendedColorType::Rgba16).map_err(|e|RawError::DecodeFailed(e.to_string()))?;
+        let mut encoder=tiff::encoder::TiffEncoder::new(&mut writer).map_err(|e|RawError::DecodeFailed(e.to_string()))?;
+        let mut image=encoder.new_image::<tiff::encoder::colortype::RGB16>(img.width(),img.height()).map_err(|e|RawError::DecodeFailed(e.to_string()))?;
+        image.extra_samples(&[tiff::tags::ExtraSamples::UnassociatedAlpha]).map_err(|e|RawError::DecodeFailed(e.to_string()))?;
+        image.encoder().write_tag(tiff::tags::Tag::IccProfile,options.output_profile.icc(false).as_slice()).map_err(|e|RawError::DecodeFailed(e.to_string()))?;
+        image.write_data(img.as_raw()).map_err(|e|RawError::DecodeFailed(e.to_string()))?;
     } else {
         let rgb_img = image::DynamicImage::ImageRgba16(img).to_rgb8();
         let quality = options
@@ -778,6 +796,109 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static NEXT_TEST_ID: AtomicU64 = AtomicU64::new(1);
+    #[test]
+    fn rendering_version_defaults_to_legacy_and_rejects_unknown_export_versions() {
+        let mut value=serde_json::to_value(settings()).unwrap();value.as_object_mut().unwrap().remove("rendering_version");
+        let old:NativeDevelopSettings=serde_json::from_value(value).unwrap();assert_eq!(old.rendering_version,1);
+        let mut invalid=old;invalid.rendering_version=3;
+        assert!(super::super::quality::base_matrix(&invalid).is_err());
+    }
+    #[test]
+    fn v2_hdr_shoulder_is_monotone_and_chroma_remains_signed() {
+        let mut s=settings();s.rendering_version=2;s.highlights=-100.0;
+        let input=[0.18,0.5,1.0,2.0,4.0,8.0,16.0];let out=input.map(|v|tone_luminance_v2(v,&s));
+        assert!(out.windows(2).all(|v|v[1]>v[0]));assert!(out[6]/16.0<0.08);assert!(out[4]<1.5);
+        let p=[-0.125f32,1.5,0.000001,1.0];let asset=NativeImageAsset{id:"tone_pixel".into(),width:1,height:1,pixel_format:PixelFormat::RGBA32F,buffer:p.into_iter().flat_map(f32::to_le_bytes).collect(),metadata:None,ref_count:1,created_at:0};
+        let source=super::super::linear_source::LinearSource::new(&asset).unwrap();
+        let rgb=base_tone_pixel(&source,0,&s,[1.0,0.0,0.0,0.0,1.0,0.0,0.0,0.0,1.0],1.0).unwrap();
+        assert!(rgb[0]<0.0);assert!((rgb[0]/rgb[1]-p[0]/p[1]).abs()<1e-6);
+    }
+    #[test]
+    #[ignore="requires LUMISEQ_NATIVE_V2_FIXTURE; produces bounded synthetic CPU/GPU/native parity references"]
+    fn write_native_v2_parity_fixtures() {
+        let destination=std::env::var("LUMISEQ_NATIVE_V2_FIXTURE").unwrap();
+        let mut fixtures=Vec::new();
+        for name in ["subpixel-star","signed-hdr-edge","hdr-tone"] {
+            let (width,height)=if name=="hdr-tone" {(7,1)}else{(61,61)};
+            let source:Vec<[f32;3]>=(0..width*height).map(|i|{
+                let x=(i%width) as f32;let y=(i/width) as f32;
+                if name=="hdr-tone" {return [[0.18;3],[0.5;3],[1.0;3],[2.0;3],[4.0;3],[8.0;3],[16.0;3]][i];}
+                if name=="signed-hdr-edge" {return if x+0.7*y>50.0 {[2.0,-0.1,0.4]}else{[0.002,0.003,0.006]};}
+                let v=0.002+0.8*(-((x-30.25).powi(2)+(y-29.5).powi(2))/2.0).exp();[v;3]
+            }).collect();
+            let mut recipe=settings();recipe.rendering_version=2;
+            if name=="hdr-tone" {recipe.exposure=-0.3;recipe.contrast=25;recipe.highlights=-90.0;recipe.shadows=30.0;recipe.whites=-20.0;recipe.blacks=-10.0;}
+            else {recipe.texture=if name=="signed-hdr-edge" {55.0}else{0.0};recipe.clarity=40.0;recipe.sharpen_amount=80.0;recipe.sharpen_radius=1.8;}
+            let buffer:Vec<_>=source.iter().flat_map(|rgb|[rgb[0],rgb[1],rgb[2],1.0]).flat_map(f32::to_le_bytes).collect();
+            let asset=NativeImageAsset{id:name.into(),width,height,pixel_format:PixelFormat::RGBA32F,buffer,metadata:None,ref_count:1,created_at:0};
+            let linear=super::super::linear_source::LinearSource::new(&asset).unwrap();
+            let base:Vec<_>=(0..source.len()).map(|i|base_tone_pixel(&linear,i,&recipe,[1.0,0.0,0.0,0.0,1.0,0.0,0.0,0.0,1.0],2.0f32.powf(recipe.exposure)).unwrap()).collect();
+            let output=super::super::detail_v2::apply_image(&base,width,height,SpatialSettings{texture:recipe.texture,clarity:recipe.clarity,sharpen_amount:recipe.sharpen_amount,sharpen_radius:recipe.sharpen_radius,sharpen_threshold:recipe.sharpen_threshold,scale:1.0});
+            assert!(output.iter().flatten().all(|v|v.is_finite()));
+            fixtures.push(serde_json::json!({"name":name,"width":width,"height":height,"source":source,"recipe":recipe,"output":output}));
+        }
+        std::fs::write(destination,serde_json::to_vec(&serde_json::json!({"cases":fixtures})).unwrap()).unwrap();
+    }
+    #[test]
+    #[ignore="requires LUMISEQ_RAW_VALIDATION and LUMISEQ_RAW_REPORT_DIR; writes private acceptance images"]
+    fn real_float_camera_rendering_v2_acceptance() {
+        let path=std::env::var("LUMISEQ_RAW_VALIDATION").expect("private source");
+        let destination=std::path::PathBuf::from(std::env::var("LUMISEQ_RAW_REPORT_DIR").expect("external report directory"));
+        std::fs::create_dir_all(&destination).unwrap();
+        let decoder=crate::raw::ffi::SafeRawDecoder::new(&path);
+        let started=std::time::Instant::now();
+        let (width,height,format,buffer,metadata)=decoder.decode_scene(crate::raw::types::DemosaicQuality::High).unwrap();
+        assert_eq!(format,PixelFormat::RGBA32F);let decode_ms=started.elapsed().as_millis();
+        let id="float-camera-v2-acceptance";
+        global_asset_registry().register(NativeImageAsset{id:id.into(),width,height,pixel_format:format,buffer,metadata:Some(metadata),ref_count:1,created_at:0});
+        let started=std::time::Instant::now();let samples=crate::raw::auto_white_balance::sample_raw_tone_rgb(id).unwrap();
+        let sample_ms=started.elapsed().as_millis();assert_eq!(samples.sample_format,"float32");
+        std::fs::write(destination.join("tone-samples.json"),serde_json::to_vec(&samples).unwrap()).unwrap();
+        let mut peaks:Vec<_>=samples.tail_samples.iter().zip(&samples.tail_positions).filter(|(_,position)|position[1]<0.5).collect();
+        peaks.sort_by(|a,b|b.0.iter().copied().fold(f32::NEG_INFINITY,f32::max).total_cmp(&a.0.iter().copied().fold(f32::NEG_INFINITY,f32::max)));
+        let mut selected=Vec::<(usize,usize)>::new();
+        for (_,position) in peaks {let x=(position[0]*width as f32) as usize;let y=(position[1]*height as f32) as usize;
+            if selected.iter().all(|(px,py)|px.abs_diff(x)>96 || py.abs_diff(y)>96) {selected.push((x,y));}
+            if selected.len()==8 {break;}
+        }
+        let auto_file=std::env::var("LUMISEQ_RAW_AUTO_TONE").ok();
+        let automatic=auto_file.as_ref().map(|file|serde_json::from_slice::<serde_json::Value>(&std::fs::read(file).unwrap()).unwrap());
+        let mut cases=Vec::new();
+        for enhanced in if automatic.is_some() {vec![true]} else {vec![false,true]} {
+            let mut develop=settings();develop.rendering_version=2;
+            if enhanced {develop.clarity=40.0;develop.sharpen_amount=80.0;develop.sharpen_radius=1.8;}
+            if let Some(value)=&automatic {
+                let patch=&value["result"]["patch"];
+                develop.exposure=patch["exposure"].as_f64().unwrap() as f32;develop.contrast=patch["contrast"].as_i64().unwrap() as i32;
+                develop.highlights=patch["highlights"].as_f64().unwrap() as f32;develop.shadows=patch["shadows"].as_f64().unwrap() as f32;
+                develop.whites=patch["whites"].as_f64().unwrap() as f32;develop.blacks=patch["blacks"].as_f64().unwrap() as f32;
+            }
+            let name=if automatic.is_some() {"v2-auto"}else if enhanced {"v2-detail"} else {"v2-neutral"};
+            let format=if automatic.is_some() {"tiff"}else{"png"};
+            let file=destination.join(format!("{name}-full.{format}"));let started=std::time::Instant::now();
+            export_raw_develop(id,develop,NativeExportOptions{output_profile:if automatic.is_some() {super::super::output_profile::OutputProfile::DisplayP3}else{Default::default()},format:format.into(),quality:None,width:None,height:None},file.to_str().unwrap()).unwrap();
+            let export_ms=started.elapsed().as_millis();let image=image::open(&file).unwrap();
+            assert_eq!((image.width(),image.height()),(width as u32,height as u32));assert_eq!(image.color(),image::ColorType::Rgba16);
+            let mut icc_bytes=0;
+            if automatic.is_some() {
+                let mut decoder=tiff::decoder::Decoder::new(std::io::BufReader::new(std::fs::File::open(&file).unwrap())).unwrap();
+                assert_eq!(decoder.get_tag_u16_vec(tiff::tags::Tag::BitsPerSample).unwrap(),vec![16,16,16,16]);
+                assert_eq!(decoder.get_tag_u16_vec(tiff::tags::Tag::ExtraSamples).unwrap(),vec![2]);
+                let icc=decoder.get_tag_u8_vec(tiff::tags::Tag::IccProfile).unwrap();icc_bytes=icc.len();
+                assert_eq!(&icc[36..40],b"acsp");assert_eq!(&icc[16..20],b"RGB ");assert!(icc.windows(18).any(|value|value==b"Lumiseq Display P3"));
+                std::fs::write(destination.join("v2-auto-icc.icc"),icc).unwrap();
+            }
+            image.thumbnail(1280,960).to_rgb8().save(destination.join(format!("{name}-overview.png"))).unwrap();
+            for (i,(cx,cy)) in selected.iter().enumerate() {
+                let x=cx.saturating_sub(48).min(width.saturating_sub(96));let y=cy.saturating_sub(48).min(height.saturating_sub(96));
+                image.crop_imm(x as u32,y as u32,96,96).to_rgb8().save(destination.join(format!("{name}-point-{i}.png"))).unwrap();
+            }
+            cases.push(serde_json::json!({"name":name,"exportMs":export_ms,"iccBytes":icc_bytes,"format":format}));
+        }
+        let report=serde_json::json!({"width":width,"height":height,"decodeMs":decode_ms,"sampleMs":sample_ms,"sourcePixels":samples.source_pixels,"peak":samples.peak,"headroomPixels":samples.headroom_pixels,"negativePixels":samples.negative_pixels,"sampleCount":samples.samples.len()+samples.tail_samples.len(),"sampleFormat":samples.sample_format,"renderingVersion":2,"pointCenters":selected,"cases":cases});
+        std::fs::write(destination.join(if automatic.is_some() {"v2-auto-acceptance.json"}else{"v2-acceptance.json"}),serde_json::to_vec_pretty(&report).unwrap()).unwrap();
+        global_asset_registry().release(id);
+    }
 
     #[test]
     fn diagnostic_tiff_retains_signed_linear_values_and_headroom() {
@@ -790,6 +911,8 @@ mod tests {
         export_raw_develop(id,settings(),options,path.to_str().unwrap()).unwrap();
         let decoded=image::open(&path).unwrap().to_rgba32f();
         assert_eq!(decoded.get_pixel(0,0).0,pixel);
+        let mut tags=tiff::decoder::Decoder::new(std::io::BufReader::new(std::fs::File::open(&path).unwrap())).unwrap();
+        assert_eq!(tags.get_tag_u16_vec(tiff::tags::Tag::ExtraSamples).unwrap(),vec![2]);
         global_asset_registry().release(id);
     }
 
@@ -810,6 +933,7 @@ mod tests {
             use image::ImageDecoder;
             let profile=if format=="tiff" {
                 let mut tiff=tiff::decoder::Decoder::new(std::io::BufReader::new(std::fs::File::open(&path).unwrap())).unwrap();
+                assert_eq!(tiff.get_tag_u16_vec(tiff::tags::Tag::ExtraSamples).unwrap(),vec![2]);
                 tiff.get_tag_u8_vec(tiff::tags::Tag::IccProfile).unwrap()
             } else {
                 let mut decoder=image::ImageReader::open(&path).unwrap().with_guessed_format().unwrap().into_decoder().unwrap();
@@ -1022,6 +1146,7 @@ mod tests {
 
     fn settings() -> NativeDevelopSettings {
         NativeDevelopSettings {
+            rendering_version: 1,
             exposure: 0.0,
             contrast: 0,
             saturation: 0,

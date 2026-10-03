@@ -1,4 +1,4 @@
-import { lazy, Suspense, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Download, FilePlus, FolderOpen, Home, Layers, RotateCcw, RotateCw, Save, SaveAll, Search, Settings, SlidersHorizontal, Sparkles, X } from 'lucide-react';
 import { useAppStore } from '../../stores/useAppStore';
 import { useHistoryStore } from '../../stores/useHistoryStore';
@@ -30,6 +30,12 @@ export function TopMenuBar({ actions }: { actions: StudioActionHandlers }) {
   const redo = useHistoryStore(s => s.redo);
   const { documents, activeDocument } = useDocuments();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsCategory, setSettingsCategory] = useState<'general' | 'diagnostics'>('general');
+  useEffect(() => {
+    const openReleases = () => { setSettingsCategory('diagnostics'); setSettingsOpen(true); };
+    window.addEventListener('lumiseq:open-release-settings', openReleases);
+    return () => window.removeEventListener('lumiseq:open-release-settings', openReleases);
+  }, []);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const chrome = useWindowChrome();
   return <>
@@ -66,6 +72,6 @@ export function TopMenuBar({ actions }: { actions: StudioActionHandlers }) {
       </div>)}
       <span className="document-strip-hint">切换工作区后仍可从这里返回文档</span>
     </div>}
-    {settingsOpen && <Suspense fallback={null}><SettingsCenter isOpen onClose={() => { setSettingsOpen(false); triggerRef.current?.focus(); }} /></Suspense>}
+    {settingsOpen && <Suspense fallback={null}><SettingsCenter isOpen initialCategory={settingsCategory} onClose={() => { setSettingsOpen(false); setSettingsCategory('general'); triggerRef.current?.focus(); }} /></Suspense>}
   </>;
 }

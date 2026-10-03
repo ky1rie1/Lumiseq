@@ -18,6 +18,10 @@ export function spatialPreviewPixelScale(
 
 export function spatialSourceHalo(settings: DevelopSettings, width: number, height: number): number {
   const detail = settings.detail;
+  if(settings.renderingVersion===2){
+    const stages=(settings.texture ? 2*Math.ceil(3*Math.max(.35,1)) : 0)+(settings.clarity ? 2*Math.ceil(3*4) : 0)+(detail.sharpenAmount ? Math.ceil(3*Math.max(.35,detail.sharpenRadius)) : 0);
+    return stages+(detail.lumaDenoise || detail.chromaDenoise ? 14 : 0);
+  }
   const radius = Math.max(settings.texture ? 1 : 0, settings.clarity ? 8 : 0,
     detail.sharpenAmount ? detail.sharpenRadius : 0);
   const downstream = radius ? Math.ceil(radius * spatialSourcePixelScale(width, height)) + 1 : 0;

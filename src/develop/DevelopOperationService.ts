@@ -100,6 +100,35 @@ export class DevelopOperationService {
   private unsubscribeCurve: (() => void) | null = null;
   private curveToken: TransactionToken | null = null;
 
+  async createRenderingUpgrade(documentId:string,signal?:AbortSignal):Promise<{commandId:string;documentId:string}> {
+    const original=this.requireDocument(documentId);
+    if(!original.isRaw)throw new RangeError('Rendering upgrade requires a RAW source');
+    if(original.settings.renderingVersion===2)throw new RangeError('This photograph already uses current rendering');
+    const settings=structuredClone(original.settings),signature=JSON.stringify(original),registered:string[]=[];
+    const isStale=()=>signal?.aborted||this.documents.getActiveDocument()?.id!==documentId||
+      JSON.stringify(this.documents.getDevelopDocument(documentId))!==signature;
+    try {
+      for(const mask of settings.masks){
+        const handle=this.assets.getHandle(mask.maskAssetId),bytes=await this.assets.getMask(mask.maskAssetId);
+        if(isStale())throw new Error('Rendering upgrade cancelled because the source changed');
+        if(!handle?.width||!handle.height||!bytes||bytes.length!==handle.width*handle.height)throw new Error('Rendering upgrade mask pixels are unavailable');
+        const copy=await this.assets.registerMask(new Uint8ClampedArray(bytes),handle.width,handle.height,mask.name);
+        registered.push(copy.id);mask.maskAssetId=copy.id;
+      }
+      if(isStale())throw new Error('Rendering upgrade cancelled because the source changed');
+      settings.renderingVersion=2;
+      const variant=createDevelopDocument({sourceUri:original.sourceUri,fileName:`${original.fileName} · 新版调色副本`,
+        fileSizeBytes:original.fileSizeBytes,width:original.width,height:original.height,isRaw:true,
+        rawProcessingVersion:original.rawProcessingVersion??1,rawCorrectionMode:original.rawCorrectionMode??'camera',
+        exif:structuredClone(original.exif),settings});
+      const command=new CreateRawVariantCommand(variant,documentId,this.documents,'Upgrade Rendering Copy',()=>{
+        if(isStale())throw new Error('Rendering upgrade cancelled because the source or task changed');
+      });
+      await this.history.execute(command);
+      return {commandId:command.id,documentId:variant.id};
+    } catch(error){for(const id of registered)this.assets.releaseAsset(id);throw error;}
+  }
+
   async createRawVariant(documentId: string, mode: RawCorrectionMode): Promise<{ commandId: string; documentId: string }> {
     if (mode !== 'camera' && mode !== 'uncorrected') throw new RangeError('Unsupported RAW correction mode');
     const original = this.requireDocument(documentId);
@@ -286,6 +315,20 @@ export class DevelopOperationService {
     const section = sections[sectionId];
     if (!section) throw new Error(`Unknown develop section: ${sectionId}`);
     const command = new UpdateDevelopSettingsCommand(documentId, section.patch, section.name, this.documents);
+    this.history.execute(command);
+    return command.id;
+  }
+
+  resetGroup(documentId: string, group: DevelopSettingsGroup, source: DevelopOperationSource): string {
+    if (group !== 'color') return this.resetSection(documentId, group, source);
+    const doc = this.requireDocument(documentId);
+    const defaults = createDefaultDevelopSettings(doc.isRaw);
+    const command = new UpdateDevelopSettingsCommand(documentId, {
+      texture: defaults.texture, clarity: defaults.clarity, dehaze: defaults.dehaze,
+      vibrance: defaults.vibrance, saturation: defaults.saturation, hsl: defaults.hsl,
+      whiteBalance: { ...defaults.whiteBalance, cameraMultipliers: doc.settings.whiteBalance.cameraMultipliers },
+    }, 'Reset Color Group', this.documents);
+    command.mergeWith = () => false;
     this.history.execute(command);
     return command.id;
   }

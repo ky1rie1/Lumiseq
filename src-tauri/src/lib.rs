@@ -13,6 +13,7 @@ pub mod security;
 pub mod commands;
 pub mod mcp;
 pub mod clipboard;
+pub mod release_check;
 // Startup diagnostics exist solely for the real entry point, which is excluded from test builds.
 #[cfg(not(test))]
 mod diagnostics;
@@ -51,6 +52,7 @@ pub fn run() {
                 commands::get_raw_linear_preview,
                 commands::get_raw_linear_tile,
                 commands::get_raw_linear_sample,
+                commands::get_raw_tone_samples,
                 commands::get_raw_spatial_analysis,
                 commands::cancel_raw_decode,
                 commands::release_raw_asset,
@@ -70,6 +72,10 @@ pub fn run() {
                 commands::local_agents::probe_local_agent,
                 commands::local_agents::run_local_agent,
                 commands::local_agents::cancel_local_agent,
+                release_check::check_release,
+                release_check::cancel_release_check,
+                release_check::open_release_page,
+                release_check::get_build_identity,
             ])
         .run(tauri::generate_context!())
 

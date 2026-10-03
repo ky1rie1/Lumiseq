@@ -7,6 +7,9 @@ import { BLEND_MODE_LABELS, ALL_BLEND_MODES } from '../../../types/blendModeLabe
 import { flattenLayerTree } from '../../../document/EditDocument';
 import { isLayerLocked, locateLayer } from '../../../edit/LayerTree';
 import { defaultLayerOperationService } from '../../../edit/LayerOperationService';
+import { useContextMenu, type ContextMenuItem } from '../../shared/ContextMenu';
+import { guardMenuLayer } from '../../shared/contextMenuTargets';
+import { defaultDocumentManager } from '../../../document/DocumentManager';
 
 interface LayersPanelProps {
   document: EditDocument;
@@ -32,6 +35,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({ document: doc, selecte
   const [name, setName] = useState('');
   const [showText, setShowText] = useState(false);
   const [error, setError] = useState('');
+  const menu = useContextMenu(doc.id, setError);
   const locked = selectedLayer ? isLayerLocked(doc, selectedLayer.id) : false;
   const run = (operation: () => unknown) => {
     setError('');
@@ -70,6 +74,33 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({ document: doc, selecte
     if (event.key === 'F2') rename(layer);
     if (event.key === 'Enter' || event.key === ' ') select(layer.id);
   };
+  const layerMenu = (layer: Layer): ContextMenuItem[] => {
+    const id = layer.id, location = locateLayer(doc.layers, id)!;
+    const inherited = location.ancestors.some(parent => parent.locked), locked = isLayerLocked(doc, id);
+    const wrap = (operation: () => unknown, locks: 'all' | 'ancestors' | 'none' = 'all') => () => { guardMenuLayer(defaultDocumentManager, doc, id, locks); return operation(); };
+    const reason = inherited ? '父图层组已锁定' : '图层已锁定';
+    const groups = flattenLayerTree(doc.layers).filter(item => item.type === 'group' && item.id !== id && !locateLayer(doc.layers, item.id)?.ancestors.some(parent => parent.id === id) && !isLayerLocked(doc, item.id));
+    return [
+      { id:'select',label:'选择此图层',run:wrap(()=>select(id),'none') },
+      { id:'rename',label:'重命名…',shortcut:'F2',disabled:locked,reason,run:wrap(()=>rename(layer)) },
+      { id:'duplicate',label:'复制图层',icon:<Copy/>,disabled:inherited,reason,run:wrap(()=>defaultLayerOperationService.duplicate(doc.id,id),'ancestors') },
+      { id:'group',label:'创建图层组',separatorBefore:true,disabled:locked,reason,run:wrap(()=>actions.createGroup(doc.id,'图层组',[id])) },
+      { id:'move-group',label:'移入图层组',disabled:locked||!groups.length,reason:locked?reason:'没有可用图层组',children:groups.map(group=>({id:group.id,label:group.name,run:wrap(()=>{guardMenuLayer(defaultDocumentManager,doc,group.id);return actions.moveToGroup(doc.id,id,group.id);})})) },
+      ...(location.parent ? [{id:'out-group',label:'移出图层组',disabled:locked,reason,run:wrap(()=>actions.moveToGroup(doc.id,id,null))}] : []),
+      { id:'raise',label:'上移图层',icon:<ArrowUp/>,disabled:locked||location.index===location.siblings.length-1,reason:locked?reason:'已在顶部',run:wrap(()=>actions.moveLayerOrder(doc.id,id,location.index+1)) },
+      { id:'lower',label:'下移图层',icon:<ArrowDown/>,disabled:locked||location.index===0,reason:locked?reason:'已在底部',run:wrap(()=>actions.moveLayerOrder(doc.id,id,location.index-1)) },
+      { id:'visible',label:layer.visible?'隐藏图层':'显示图层',icon:layer.visible?<EyeOff/>:<Eye/>,separatorBefore:true,disabled:locked,reason,run:wrap(()=>actions.toggleLayerVisibility(doc.id,id)) },
+      { id:'lock',label:layer.locked?'解锁图层':'锁定图层',icon:<Lock/>,disabled:inherited,reason,run:wrap(()=>defaultLayerOperationService.setLocked(doc.id,id,!layer.locked),'ancestors') },
+      { id:'transform',label:'变换',disabled:locked,reason,children:[
+        {id:'properties',label:'变换属性…',run:wrap(()=>{select(id);onShowProperties();})},
+        {id:'flip-x',label:'水平翻转',run:wrap(()=>defaultLayerOperationService.flip(doc.id,id,'horizontal'))},
+        {id:'flip-y',label:'垂直翻转',run:wrap(()=>defaultLayerOperationService.flip(doc.id,id,'vertical'))},
+        {id:'center',label:'水平居中',run:wrap(()=>defaultLayerOperationService.align(doc.id,id,'center'))},
+        {id:'middle',label:'垂直居中',run:wrap(()=>defaultLayerOperationService.align(doc.id,id,'middle'))},
+      ] },
+      { id:'delete',label:'删除图层',icon:<Trash2/>,separatorBefore:true,disabled:locked,reason,run:wrap(()=>actions.deleteLayer(doc.id,id)) },
+    ];
+  };
   const rows = (layers: Layer[], level = 1): React.ReactNode => [...layers].reverse().map(layer => {
     const selected = layer.id === selectedLayerId;
     const location = locateLayer(doc.layers, layer.id)!;
@@ -80,7 +111,8 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({ document: doc, selecte
     return <div key={layer.id} role="treeitem" aria-label={label} aria-selected={selected} aria-level={level} aria-expanded={layer.type === 'group' ? expanded : undefined}
       tabIndex={selected || (!selectedLayerId && visible[0]?.id === layer.id) ? 0 : -1}
       ref={element => { if (element) refs.current.set(layer.id, element); else refs.current.delete(layer.id); }}
-      onKeyDown={event => onTreeKey(event, layer)}>
+      onContextMenu={event => menu.open(event, layerMenu(layer), `${layer.name} 的操作`)}
+      onKeyDown={event => { menu.key(event, () => layerMenu(layer), `${layer.name} 的操作`); if (!event.defaultPrevented) onTreeKey(event, layer); }}>
       <div className={`layer-row ${selected ? 'is-selected' : ''}`} style={{ paddingLeft: 4 + (level - 1) * 14 }}>
         {layer.type === 'group' ? <button type="button" className="icon-button" title={expanded ? '收起图层组' : '展开图层组'} aria-label={`${expanded ? '收起' : '展开'} ${layer.name}`} onClick={() => toggle(layer.id)}>{expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}</button> : <span className="w-5 shrink-0" />}
         <button type="button" className={`icon-button ${layer.visible ? '' : 'opacity-50'}`} aria-label={`${layer.visible ? '隐藏' : '显示'} ${layer.name}`} title={layer.visible ? '隐藏图层' : '显示图层'} onClick={() => run(() => actions.toggleLayerVisibility(doc.id, layer.id))}>{layer.visible ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}</button>
@@ -117,6 +149,7 @@ export const LayersPanel: React.FC<LayersPanelProps> = ({ document: doc, selecte
       {error && <p role="alert" className="text-2xs text-red-300">{error}</p>}
     </div>
     <div className="layer-list" role="tree" aria-label="图层树">{doc.layers.length ? rows(doc.layers) : <div className="layer-empty">用「新建图层」添加绘画、文字或图片。</div>}</div>
+    {menu.node}
     <div className="flex items-center gap-1 p-2 border-t border-studio-800">
       <button type="button" disabled={!selectedLayer || !!selectedLocation?.ancestors.some(layer => layer.locked)} className="icon-button" aria-label="复制所选图层" title="复制所选图层" onClick={() => selectedLayer && run(() => defaultLayerOperationService.duplicate(doc.id, selectedLayer.id))}><Copy className="w-4 h-4" /></button>
       <button type="button" disabled={!selectedLayer || locked || selectedLocation?.index === (selectedLocation?.siblings.length ?? 0) - 1} className="icon-button" aria-label="上移所选图层" title="上移所选图层" onClick={() => selectedLocation && run(() => actions.moveLayerOrder(doc.id, selectedLayer!.id, selectedLocation.index + 1))}><ArrowUp className="w-4 h-4" /></button>

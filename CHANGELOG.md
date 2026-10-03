@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased - RAW detail, automatic tone and workspace interactions
+
+- Fit exposure, contrast, highlights, shadows, whites and blacks jointly from bounded native float samples. Preserve white balance, curves, HSL and local masks; distinguish low-key scenes and reject stale or cancelled analysis before one undoable commit.
+- Add a separate rendering version for normalized Gaussian/guided luminance detail, sequential sharpening, noise transitions and point-light halo control. New documents use version 2; existing documents and resets retain their version. An explicit upgrade creates a separate document with the same RAW decoding and mask coordinates.
+- Match CPU, GPU and native tone/detail ordering, including extended-range HSL and complete region/stripe support. Add actual WebView2 round-point, rotation, signed/HDR and useful-strength regressions.
+- Add command-backed canvas, layer, RAW module, parameter and curve context menus with target validation, inherited locks, keyboard navigation and focus restoration. Add canonical AI/MCP automatic tone, rendering upgrade and grouped reset tools.
+- Check the official GitHub release list with bounded requests, ETag caching, daily automatic checks and explicit offline/rate-limit states. Show update notes and complete Windows installer/ZIP entry points; distinguish development builds and allow automatic checks to be disabled.
+- Keep private camera files and generated validation outputs outside published source. Full-size Sony validation and current limitations are recorded in [RAW quality](docs/RAW_QUALITY.md).
+
 ## Unreleased — RAW quality and compatibility
 
 - Remove nine unreferenced legacy modules, including the early RAW shader, duplicate AI tool registry and retired settings dialogs. Active processing, provider and settings entry points remain covered by their existing regressions.

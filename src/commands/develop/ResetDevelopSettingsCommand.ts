@@ -22,6 +22,7 @@ export class ResetDevelopSettingsCommand extends BaseCommand {
 
     this.prevSettings = structuredClone(doc.settings);
     const defaults = createDefaultDevelopSettings(doc.isRaw);
+    defaults.renderingVersion = doc.settings.renderingVersion ?? 1;
     if (doc.isRaw && doc.settings.whiteBalance.cameraMultipliers) {
       defaults.whiteBalance.cameraMultipliers = doc.settings.whiteBalance.cameraMultipliers;
     }

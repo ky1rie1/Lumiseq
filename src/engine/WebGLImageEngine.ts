@@ -19,7 +19,7 @@ import { waveletDenoise, estimateWaveletNoise } from './waveletDenoise';
 import { analyzeHaze, applyHaze } from './hazeAnalysis';
 import { validateSpatialAnalysis, spatialBasePayload, type RawSpatialAnalysis } from '../app/rawSpatialAnalysis';
 import { spatialPreviewPixelScale } from './spatialScale';
-import { applySpatialPixel } from './developSpatialMath';
+import { applySpatialImage } from './developSpatialMath';
 import { applyBaseTone, applyDevelopColor, applyRelativeWhiteBalance, buildDevelopCurveLUT, curvesAreNeutral, linearToSrgb, relativeWhiteBalanceMatrix, srgbToLinear, type RGB } from './developColorMath';
 import { computeHistogramFromImageData } from './histogram';
 import { defaultAssetManager } from '../assets/AssetManager';
@@ -273,6 +273,7 @@ export class WebGLImageEngine implements IImageEngine {
     _viewport?: RenderViewport,
     options?: { forceCPU?: boolean; fallbackReason?: string; sourceRect?: RawSourceRect; spatialSourceSize?: { width: number; height: number }; spatialAnalysis?:RawSpatialAnalysis }
   ): Promise<void> {
+    if(settings.renderingVersion!==undefined && settings.renderingVersion!==1 && settings.renderingVersion!==2)throw new Error('Unsupported rendering version');
     relativeWhiteBalanceMatrix(settings.whiteBalance);
     const source = this.loadedSources.get(sourceAssetId);
     if (!source) {
@@ -338,7 +339,6 @@ export class WebGLImageEngine implements IImageEngine {
       // Reject unsupported controls instead of silently exporting different adjustments.
       const unsupported: string[] = [];
       if (settings.optics?.vignetteAmount) unsupported.push('vignette');
-      if (Object.values(settings.hsl || {}).some(value => value.hue || value.saturation || value.luminance)) unsupported.push('HSL');
 
       if (unsupported.length) throw new Error(`These adjustments require WebGL 2: ${unsupported.join(', ')}.`);
       const ctx = targetCanvas.getContext('2d');
@@ -436,6 +436,7 @@ export class WebGLImageEngine implements IImageEngine {
       gl.bindTexture(gl.TEXTURE_2D, readTex);
       gl.uniform1i(gl.getUniformLocation(this.progBaseTone!, 'u_image'), 0);
       gl.uniform1i(gl.getUniformLocation(this.progBaseTone!, 'u_input_linear'), linearSource ? 1 : 0);
+      gl.uniform1i(gl.getUniformLocation(this.progBaseTone!, 'u_rendering_version'), settings.renderingVersion ?? 1);
 
       gl.uniform1f(gl.getUniformLocation(this.progBaseTone!, 'u_exposure'), settings.exposure);
       gl.uniform1f(gl.getUniformLocation(this.progBaseTone!, 'u_contrast'), settings.contrast);
@@ -466,10 +467,12 @@ export class WebGLImageEngine implements IImageEngine {
 
     const sourceWidth=sourceRect?.sourceWidth??spatialSourceSize?.width??width;
     const nativePixelScale=width/(sourceRect?.width??sourceWidth);
-    if(spatialAnalysis && !this.spatialQuality)this.spatialQuality=new SpatialQualityPass(gl);
+    if((spatialAnalysis || settings.renderingVersion===2) && !this.spatialQuality)this.spatialQuality=new SpatialQualityPass(gl);
     if(spatialAnalysis)this.spatialQuality!.denoise(this.renderGraph,width,height,settings,spatialAnalysis,nativePixelScale);
     // --- Pass 2: Detail filter on denoised pixels ---
-    this.renderGraph.runPass(this.progSpatial, (readTex) => {
+    if(settings.renderingVersion===2) {
+      this.spatialQuality!.detail(this.renderGraph,width,height,settings,nativePixelScale);
+    } else this.renderGraph.runPass(this.progSpatial, (readTex) => {
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, readTex);
       gl.uniform1i(gl.getUniformLocation(this.progSpatial!, 'u_image'), 0);
@@ -661,9 +664,10 @@ export class WebGLImageEngine implements IImageEngine {
       const filtered=spatialAnalysis ? waveletDenoise(base,width,height,settings.detail.lumaDenoise,settings.detail.chromaDenoise,
         spatialAnalysis.noise.map(v=>v*Math.min(1,nativePixelScale)) as RGB,nativePixelScale) : base;
       const detailSettings={...settings,dehaze:0,detail:{...settings.detail,lumaDenoise:0,chromaDenoise:0}};
+      const detailed=applySpatialImage(filtered,width,height,detailSettings,settings.renderingVersion===2 ? nativePixelScale : spatialScale);
       for (let i = 0; i < data.length; i += 4) {
         const index = i / 4;
-        let spatial=applySpatialPixel(filtered,width,height,index % width,Math.floor(index/width),detailSettings,spatialScale);
+        let spatial=[detailed[index*3],detailed[index*3+1],detailed[index*3+2]] as RGB;
         if(spatialAnalysis && settings.dehaze)spatial=applyHaze(spatial,spatialAnalysis.haze,
           sourceRect[0]+(index%width+.5)/width*sourceRect[2],sourceRect[1]+(Math.floor(index/width)+.5)/height*sourceRect[3],settings.dehaze);
         const color = applyDevelopColor(spatial,settings,curveLUT);

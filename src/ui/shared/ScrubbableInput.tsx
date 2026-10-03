@@ -2,10 +2,15 @@
 //! High-Density Professional Scrubbable Parameter Input
 //! Supports: 1) Horizontal Label Drag, 2) Slider, 3) Click-to-type numeric entry, 4) Double-click reset, 5) Shift/Alt precision.
 
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useContext } from 'react';
 import { ParameterDefinition } from './parameterDefinitions';
 import { nudgeParameter, shouldNudgeHoveredParameter } from './parameterKeyboard';
-import { RotateCcw } from 'lucide-react';
+import { RotateCcw, Copy, ClipboardPaste } from 'lucide-react';
+import { ContextMenuScope, useContextMenu, type ContextMenuItem } from './ContextMenu';
+import { parseMenuNumber } from './contextMenuModel';
+import { useAppStore } from '../../stores/useAppStore';
+import { defaultDocumentManager } from '../../document/DocumentManager';
+import { guardMenuDocument } from './contextMenuTargets';
 
 interface ScrubbableInputProps {
   param: ParameterDefinition;
@@ -35,6 +40,11 @@ export const ScrubbableInput: React.FC<ScrubbableInputProps> = ({
   const keyboardActiveRef = useRef(false);
   const keyboardValueRef = useRef(value);
   const rangeRef = useRef<HTMLInputElement>(null);
+  const scope = useContext(ContextMenuScope);
+  const setStatus = useAppStore(state => state.setStatusMessage);
+  const contextMenu = useContextMenu(scope?.id, setStatus);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
   const safeParam = param || {
     id: 'param',
@@ -59,6 +69,25 @@ export const ScrubbableInput: React.FC<ScrubbableInputProps> = ({
     onPreviewDrag(safeParam.defaultValue);
     onCommitDrag?.(safeParam.defaultValue);
   }, [safeParam.defaultValue, onStartDrag, onPreviewDrag, onCommitDrag]);
+  const menuItems = (): ContextMenuItem[] => {
+    const capturedScope = scope;
+    const capturedDocument = defaultDocumentManager.getActiveDocument();
+    const guard = () => {
+      if (!mounted.current) throw new Error('参数已关闭，请重新打开菜单。');
+      capturedScope?.guard();
+      if (!capturedScope && capturedDocument) guardMenuDocument(defaultDocumentManager, capturedDocument.id, capturedDocument);
+    };
+    const apply = (next: number) => { guard(); onStartDrag?.(); onPreviewDrag(next); onCommitDrag?.(next); };
+    return [
+      { id: 'reset', label: '重置此参数', icon: <RotateCcw/>, disabled: scope?.disabled, reason: scope?.reason, run: () => apply(safeParam.defaultValue) },
+      { id: 'copy', label: '复制数值', icon: <Copy/>, run: async () => { guard(); await navigator.clipboard.writeText(String(value)); } },
+      { id: 'paste', label: '粘贴数值', icon: <ClipboardPaste/>, disabled: scope?.disabled, reason: scope?.reason, run: async () => {
+        const next = parseMenuNumber(await navigator.clipboard.readText(), safeParam.min, safeParam.max);
+        if (next === null) throw new Error(`数值必须在 ${safeParam.min} 至 ${safeParam.max} 之间。`);
+        apply(next);
+      } },
+    ];
+  };
 
   // Direct numeric entry submit
   const commitEdit = () => {
@@ -128,6 +157,7 @@ export const ScrubbableInput: React.FC<ScrubbableInputProps> = ({
 
   // Label horizontal scrub drag
   const handleLabelMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0) return;
     e.preventDefault();
     startXRef.current = e.clientX;
     startValRef.current = value;
@@ -164,7 +194,8 @@ export const ScrubbableInput: React.FC<ScrubbableInputProps> = ({
   };
 
   return (
-    <div className="scrubbable-input select-none">
+    <div className="scrubbable-input select-none" onContextMenu={event => contextMenu.open(event, menuItems(), safeParam.label)} onKeyDown={event => contextMenu.key(event, menuItems, safeParam.label)}>
+      {contextMenu.node}
       <div className="flex items-center justify-between">
         {/* Scrubbable Label */}
         <div className="flex items-center space-x-1">
@@ -237,7 +268,7 @@ export const ScrubbableInput: React.FC<ScrubbableInputProps> = ({
           aria-label={safeParam.label}
           aria-valuetext={formattedDisplay}
           style={{ '--slider-start': `${Math.min(defaultPosition, valuePosition)}%`, '--slider-end': `${Math.max(defaultPosition, valuePosition)}%` } as React.CSSProperties}
-          onPointerDown={beginSliderChange}
+          onPointerDown={event => { if (event.button === 0) beginSliderChange(); }}
           onPointerEnter={() => setIsSliderHovered(true)}
           onPointerLeave={leaveSlider}
           onChange={(e) => {

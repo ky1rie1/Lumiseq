@@ -35,6 +35,8 @@ export class DevelopProjectSerializer {
       const digest = await crypto.subtle.digest('SHA-256', bytes);
       sourceImage = {data:btoa(chunks.join('')),mimeType:blob.type,sha256:Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('')};
     }
+    if (doc.settings.renderingVersion!==undefined && doc.settings.renderingVersion!==1 && doc.settings.renderingVersion!==2) throw new Error('Unsupported rendering version.');
+    if ((doc.settingsSnapshots??[]).some(snapshot=>snapshot.settings.renderingVersion!==undefined && snapshot.settings.renderingVersion!==1 && snapshot.settings.renderingVersion!==2))throw new Error('Unsupported snapshot rendering version.');
     const settings = structuredClone(doc.settings);
     // Mask bitmaps are deterministic from geometry and strokes, so no session asset IDs belong on disk.
     settings.masks = settings.masks.map(mask => ({ ...mask, maskAssetId: '' }));
@@ -68,6 +70,7 @@ export class DevelopProjectSerializer {
         !Number.isFinite(source.width) || (source.width ?? 0) <= 0 || !Number.isFinite(source.height) || (source.height ?? 0) <= 0 ||
         !source.settings || typeof source.settings !== 'object' || !Array.isArray(source.settings.masks) ||
         source.settings.masks.length > MAX_MASKS) throw new Error('RAW 项目文档已损坏。');
+    if (source.settings.renderingVersion!==undefined && source.settings.renderingVersion!==1 && source.settings.renderingVersion!==2) throw new Error('Unsupported rendering version.');
     if (source.isRaw) {
       if (!(/^[A-Za-z]:[\\/]/.test(source.sourceUri) || source.sourceUri.startsWith('\\\\') || source.sourceUri.startsWith('/'))) {
         throw new Error('RAW 项目原始文件路径无效。');
@@ -82,6 +85,7 @@ export class DevelopProjectSerializer {
       rawCorrectionMode:source.rawCorrectionMode ?? 'camera',
       exif: source.exif, settings: source.settings });
     if (source.settingsSnapshots !== undefined && (!Array.isArray(source.settingsSnapshots) || source.settingsSnapshots.length > 64 || source.settingsSnapshots.some(snapshot => !snapshot || typeof snapshot.id !== 'string' || typeof snapshot.name !== 'string' || !snapshot.settings || !Array.isArray(snapshot.settings.masks) || snapshot.settings.masks.length > MAX_MASKS))) throw new Error('RAW 项目快照已损坏。');
+    if (Array.isArray(source.settingsSnapshots) && source.settingsSnapshots.some(s=>s.settings.renderingVersion!==undefined && s.settings.renderingVersion!==1 && s.settings.renderingVersion!==2)) throw new Error('Unsupported snapshot rendering version.');
     restored.settingsSnapshots = structuredClone(source.settingsSnapshots ?? []);
     restored.aiHistory = source.aiHistory;
     restored.updatedAt = source.updatedAt ?? Date.now();

@@ -154,6 +154,12 @@ pub fn set_mcp_auth_token(token: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub async fn get_raw_tone_samples(asset_id: String) -> Result<crate::raw::auto_white_balance::RawToneSamples, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::raw::auto_white_balance::sample_raw_tone_rgb(&asset_id).map_err(|error| error.to_string()))
+        .await.map_err(|error| format!("RAW tone sampling worker failed: {error}"))?
+}
+
+#[tauri::command]
 pub fn start_mcp_http_server(
     app: tauri::AppHandle,
     port: Option<u16>,

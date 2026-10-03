@@ -16,6 +16,11 @@ impl SpatialSettings {
         self.texture != 0.0 || self.clarity != 0.0 || self.sharpen_amount != 0.0
     }
 
+    pub fn halo_v2(self) -> usize {
+        (if self.texture!=0.0 {2*(3.0*self.scale.max(0.35)).ceil() as usize}else{0})
+        +(if self.clarity!=0.0 {2*(3.0*(4.0*self.scale).max(0.35)).ceil() as usize}else{0})
+        +(if self.sharpen_amount!=0.0 {(3.0*(self.sharpen_radius.max(0.5)*self.scale).max(0.35)).ceil() as usize}else{0})
+    }
     pub fn halo(self) -> usize {
         if !self.active() {
             return 0;
@@ -188,7 +193,7 @@ mod tests {
                 ..settings()
             },
         );
-        // 55% center-column weight, 22.5% left and right. Blur = .59875.
+        // 55% center-column weight, 22.5% left and right. Blur = 0.59875.
         for value in output {
             assert!((value - 0.80125).abs() < 0.000001);
         }

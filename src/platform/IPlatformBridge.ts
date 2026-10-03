@@ -84,6 +84,10 @@ export interface ClipboardImage {
 
 export interface IPlatformBridge {
   readonly isDesktop: boolean;
+  checkRelease?(etag?: string, requestId?: string): Promise<import('../releases/releaseTypes').ReleaseQueryResult>;
+  cancelReleaseCheck?(requestId: string): Promise<void>;
+  openReleasePage?(url: string): Promise<void>;
+  getBuildIdentity?(): Promise<import('../releases/releaseTypes').BuildIdentity>;
 
   /** Open native Windows file dialog to select RAW or raster images */
   openFileDialog(options?: OpenFileOptions): Promise<SelectedFile | null>;
@@ -142,6 +146,7 @@ export interface IPlatformBridge {
 
   /** Unedited RGBA16 source grid as linear sRGB, at most 16,384 RGB pixels. */
   getRawLinearSample?(assetId: string): Promise<number[][]>;
+  getRawToneSamples?(assetId: string): Promise<{ samples: number[][]; positions: [number, number][]; tailSamples: number[][]; tailPositions: [number, number][]; sourcePixels: number; peak: number; headroomPixels: number; negativePixels: number; sampleFormat: 'float32' | 'uint16' }>;
 
   /** Whole-source haze coefficients and native-resolution noise estimate, not a crop estimate. */
   getRawSpatialAnalysis?(assetId: string, settings: import('../app/nativeDevelopPayload').NativeDevelopPayload): Promise<import('../app/rawSpatialAnalysis').RawSpatialAnalysis>;

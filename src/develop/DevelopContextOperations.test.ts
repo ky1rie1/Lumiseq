@@ -1,0 +1,26 @@
+import { expect, it } from 'vitest';
+import { DevelopOperationService } from './DevelopOperationService';
+import { DocumentManager } from '../document/DocumentManager';
+import { CommandBus } from '../history/CommandBus';
+import { createDevelopDocument } from '../document/DevelopDocument';
+it('resets color as one undo while preserving masks, camera data and rendering version', () => {
+ const docs=new DocumentManager(), bus=new CommandBus(docs), service=new DevelopOperationService(docs,bus);
+ const doc=createDevelopDocument({sourceUri:'x.raw',fileName:'x.raw',isRaw:true});
+ doc.settings.renderingVersion=1;
+ doc.rawProcessingVersion=1;
+ doc.settings.masks=[{id:'mask',name:'Local',maskAssetId:'immutable-mask',kind:'radial',geometry:{center:{x:.4,y:.6},radiusX:.2,radiusY:.3},inverted:false,opacity:.7,exposure:.5}];
+ const masks=structuredClone(doc.settings.masks);
+ doc.settings.whiteBalance={mode:'custom',temperature:6500,tint:10,cameraMultipliers:[2,1,1.4,1]};
+ doc.settings.clarity=40;doc.settings.hsl.red.hue=30;docs.openDocument(doc);
+ service.resetGroup(doc.id,'color','manual');
+ expect(docs.getDevelopDocument(doc.id)?.settings.clarity).toBe(0);
+ expect(docs.getDevelopDocument(doc.id)?.settings.hsl.red.hue).toBe(0);
+ expect(docs.getDevelopDocument(doc.id)?.settings.whiteBalance.cameraMultipliers).toEqual([2,1,1.4,1]);
+ expect(docs.getDevelopDocument(doc.id)?.settings.masks).toEqual(masks);
+ expect(docs.getDevelopDocument(doc.id)?.settings.renderingVersion).toBe(1);
+ expect(docs.getDevelopDocument(doc.id)?.rawProcessingVersion).toBe(1);
+ bus.undo();expect(docs.getDevelopDocument(doc.id)?.settings.clarity).toBe(40);
+ expect(docs.getDevelopDocument(doc.id)?.settings.whiteBalance.temperature).toBe(6500);
+ bus.redo();expect(docs.getDevelopDocument(doc.id)?.settings.clarity).toBe(0);
+ expect(docs.getDevelopDocument(doc.id)?.settings.masks).toEqual(masks);
+});

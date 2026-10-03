@@ -3,6 +3,43 @@ import { DevelopAutoToneService } from './DevelopAutoToneService';
 import { DocumentManager } from '../document/DocumentManager';
 import { CommandBus } from '../history/CommandBus';
 import { createDevelopDocument } from '../document/DevelopDocument';
+import type { FloatAutoToneSource } from './autoToneSource';
+const floatSource=():FloatAutoToneSource=>({samples:Array.from({length:64},(_,i)=>[.001+i*.001,.001+i*.001,.001+i*.001]),
+ positions:Array.from({length:64},(_,i)=>[(i+.5)/64,.5]),tailSamples:[],tailPositions:[],precision:'float32',sourcePixels:64,sourcePeak:.064});
+it('applies float analysis with one awaited history command and real source evidence',async()=>{
+ const docs=new DocumentManager(),history=new CommandBus(docs),doc=createDevelopDocument({sourceUri:'x',fileName:'x',isRaw:true});
+ doc.nativeAssetId='native';doc.rawState='ready';docs.openDocument(doc);
+ const service=new DevelopAutoToneService(docs,history,undefined,async()=>floatSource());
+ const result=await service.applyWithResult(doc.id);
+ expect(result?.evidence?.precision).toBe('float32');expect(result?.commandId).toBeTruthy();
+ expect(history.getHistory()).toHaveLength(1);expect(docs.getDevelopDocument(doc.id)!.settings.exposure).toBeGreaterThan(0);
+ history.undo();expect(docs.getDevelopDocument(doc.id)!.settings.exposure).toBe(0);
+});
+it('rejects native source swaps and cancellation even when the display source stays the same',async()=>{
+ for(const change of ['native','abort']){
+  const docs=new DocumentManager(),history=new CommandBus(docs),doc=createDevelopDocument({sourceUri:'x',fileName:'x',isRaw:true});
+  doc.nativeAssetId='native';doc.rawState='ready';doc.sourceAssetId='display';docs.openDocument(doc);
+  let resolve!:(source:FloatAutoToneSource)=>void;
+  const service=new DevelopAutoToneService(docs,history,undefined,()=>new Promise(r=>resolve=r));
+  const controller=new AbortController(),pending=service.applyWithResult(doc.id,()=>true,controller.signal);
+  if(change==='native')docs.updateDocument({...doc,nativeAssetId:'other'},'Decode');else controller.abort();
+  resolve(floatSource());expect(await pending).toBeNull();expect(history.getHistory()).toHaveLength(0);
+ }
+});
+it('rejects cancellation while the history bus is waiting to execute the command',async()=>{
+ const docs=new DocumentManager(),history=new CommandBus(docs),doc=createDevelopDocument({sourceUri:'x',fileName:'x',isRaw:true});
+ doc.nativeAssetId='native';doc.rawState='ready';docs.openDocument(doc);
+ const execute=history.execute.bind(history);let queued!:(()=>Promise<void>);
+ let announce!:()=>void;const ready=new Promise<void>(resolve=>announce=resolve);
+ history.execute=command=>new Promise<void>((resolve,reject)=>{
+  queued=async()=>{try{await execute(command);resolve();}catch(error){reject(error);}};announce();
+ });
+ const service=new DevelopAutoToneService(docs,history,undefined,async()=>floatSource());
+ const controller=new AbortController(),work=service.applyWithResult(doc.id,()=>true,controller.signal);
+ await ready;controller.abort();await queued();
+ expect(await work).toBeNull();expect(history.getHistory()).toHaveLength(0);
+ expect(docs.getDevelopDocument(doc.id)!.settings.exposure).toBe(0);
+});
 it('applies one undoable tonal patch, preserves other adjustments and is stable when repeated', async()=>{
  const docs=new DocumentManager(),history=new CommandBus(docs);const doc=createDevelopDocument({sourceUri:'x',fileName:'x',isRaw:false});
  doc.sourceAssetId='source';doc.settings.saturation=17;doc.settings.contrast=18;doc.settings.shadows=12;doc.settings.whites=-20;doc.settings.blacks=-3;docs.openDocument(doc);

@@ -1,0 +1,14 @@
+.release-auto-check { display:flex; gap:8px; align-items:center; font-size:13px; margin:12px 0; }
+.release-settings .settings-group-actions button { display:inline-flex; align-items:center; gap:6px; }
+.release-entry { border-top:1px solid var(--border-subtle, #ffffff18); margin-top:16px; padding-top:16px; min-width:0; }
+.release-entry h4 { font-size:13px; margin:0 0 8px; }
+.release-notes { max-height:320px; overflow:auto; font-size:13px; line-height:1.65; overflow-wrap:anywhere; }
+.release-notes h4 { font-size:14px; margin:12px 0 6px; }
+.release-notes p { margin:6px 0; white-space:pre-wrap; }
+.release-notes ul { padding-left:20px; margin:4px 0; }
+.release-text-link { color:#83c4bd; background:none; border:0; padding:0; text-decoration:underline; display:inline-flex; align-items:center; gap:3px; }
+.release-startup { position:absolute; bottom:16px; right:16px; z-index:40; display:flex; align-items:center; gap:10px; max-width:calc(100% - 32px); padding:10px 12px; background:#222528; border:1px solid #ffffff30; border-radius:6px; box-shadow:0 4px 16px #0005; font-size:13px; }
+.release-startup span { min-width:0; overflow-wrap:anywhere; }
+.release-startup button { width:28px; height:28px; flex:0 0 28px; display:grid; place-items:center; background:transparent; border:0; border-radius:4px; }
+.release-startup button:hover { background:#ffffff15; }
+.release-startup button:focus-visible { outline:2px solid #83c4bd; }

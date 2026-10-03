@@ -44,6 +44,8 @@ Module tests live beside source; broader tests live in `tests/`. Production WebG
 
 Real multi-camera checks and size-bounded sample preparation are documented in [RAW compatibility](RAW_COMPATIBILITY.md). The default download corpus contains passing CC0 samples; opt-in unsupported fixtures intentionally fail the native gate. The [RAW precision page](../integration/raw-linear-precision.html) compares production GPU/CPU shadows and native binary IPC when run through the `raw-precision` quality probe. Private Sony crop fixtures must be generated locally and are never bundled.
 
+The version-2 [detail probe](../integration/raw-quality-v2-validation.html) uses the production renderer and independent CPU fixtures. Run it through the native `spatial_quality_probe` with `LUMISEQ_GPU_CASE=raw-v2` and a local Vite server. The `real_float_camera_rendering_v2_acceptance` test remains ignored by default. `LUMISEQ_RAW_VALIDATION` and `LUMISEQ_RAW_REPORT_DIR` select a private source and external output directory; original files and exports must stay outside Git.
+
 ## Release build
 
 ```powershell

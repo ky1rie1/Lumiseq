@@ -80,7 +80,7 @@ it('matches odd-size per-axis evidence in production Edit pixels', async () => {
   expect(data.filter((_v, i) => i % 4 === 1)).toEqual(Array(12).fill(255));
   service.dispose();
 });
-it('reads real native-size tile pixels with halo, whole-source analysis, and original/current recipe', async () => {
+it.each([1,2] as const)('reads real native-size tile pixels with rendering version %i halo, whole-source analysis, and original/current recipe', async (version) => {
   const create = installPixelCanvas(), assets = new AssetManager(), documents = new DocumentManager();
   const width = 80, height = 40, source = create(width, height), ctx = source.getContext('2d')!;
   ctx.fillStyle = '#646464'; ctx.fillRect(0, 0, width, height); ctx.fillStyle = '#202020'; ctx.fillRect(40, 0, 40, height);
@@ -92,13 +92,14 @@ it('reads real native-size tile pixels with halo, whole-source analysis, and ori
     return new Uint8Array(await (await new Promise<Blob>(resolve => tile.toBlob(b => resolve(b!)))).arrayBuffer());
   }, async getRawSpatialAnalysis() { return analysis; } };
   const doc = createDevelopDocument({ sourceUri: 'test.raw', fileName: 'test.raw', width, height, isRaw: true, rawState: 'ready', rawEngineAttached: true });
+  doc.settings.renderingVersion=version;
   doc.nativeAssetId = 'raw-native'; doc.settings.exposure = 1; doc.settings.clarity = 10; doc.settings.dehaze = 1;
   documents.openDocument(doc);
   const renderer = createDocumentObservationRenderer({ assets, bridge, createCanvas: (w, h) => { const c = create(w, h); surfaces.push(c); return c; },
     engineFactory: () => new WebGLImageEngine(assets) });
   const service = new DocumentObservationService({ documents, assets, renderer });
   const current = await service.observe({ documentId: doc.id, mode: 'detail', region: { x: 30, y: 10, width: 20, height: 10 } });
-  expect(reads).toEqual([[21, 1, 38, 28]]); expect(current.evidence.pixelToDocument).toEqual([1, 0, 0, 1, 30, 10]);
+  expect(reads).toEqual(version===1 ? [[21,1,38,28]] : [[6,0,68,40]]); expect(current.evidence.pixelToDocument).toEqual([1, 0, 0, 1, 30, 10]);
   expect(current.evidence.approximate).toBe(false);
   const currentPixels = await pixels(current.image.data); expect(currentPixels[0]).toBeGreaterThan(125);
   const original = await service.observe({ documentId: doc.id, mode: 'detail', variant: 'original', region: { x: 30, y: 10, width: 20, height: 10 } });

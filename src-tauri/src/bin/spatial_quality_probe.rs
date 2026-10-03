@@ -20,6 +20,7 @@ fn main() {
     let url = match std::env::var("LUMISEQ_GPU_CASE").as_deref() {
         Ok("raw") => "http://localhost:5173/integration/real-raw-gpu-validation.html",
         Ok("raw-precision") => "http://localhost:5173/integration/raw-linear-precision.html",
+        Ok("raw-v2") => "http://localhost:5173/integration/raw-quality-v2-validation.html",
         Ok("workbench") => "http://localhost:5173/integration/workbench-validation.html",
         _ => "http://localhost:5173/integration/spatial-quality-validation.html",
     };

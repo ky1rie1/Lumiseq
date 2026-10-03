@@ -2,6 +2,7 @@ import { SPATIAL_VERTEX_SHADER } from '../shaders/passSpatialFilter';
 import type { RawSpatialAnalysis } from '../../app/rawSpatialAnalysis';
 import type { DevelopSettings } from '../../types/develop';
 import { RenderGraph } from './RenderGraph';
+import { DETAIL_COEFFICIENTS, DETAIL_COPY, DETAIL_GAUSSIAN, DETAIL_MOMENTS, DETAIL_RECONSTRUCT } from '../shaders/detailV2';
 
 const head = `#version 300 es
 precision highp float;
@@ -47,7 +48,7 @@ export class SpatialQualityPass {
     const quad=gl.createBuffer(); if(!quad)throw new Error('Quality quad allocation failed');this.quad=quad;
     gl.bindBuffer(gl.ARRAY_BUFFER,quad);
     gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,0,0,1,-1,1,0,-1,1,0,1,1,1,1,1]),gl.STATIC_DRAW);
-    try { for(const source of [encode,blur,accumulate,decode,haze]) this.programs.push(this.compile(source)); }
+    try { for(const source of [encode,blur,accumulate,decode,haze,DETAIL_COPY,DETAIL_MOMENTS,DETAIL_GAUSSIAN,DETAIL_COEFFICIENTS,DETAIL_RECONSTRUCT]) this.programs.push(this.compile(source)); }
     catch(error){this.dispose();throw error;}
   }
   private compile(fragment:string):WebGLProgram {
@@ -65,10 +66,10 @@ export class SpatialQualityPass {
     }catch(error){if(program)gl.deleteProgram(program);throw error;}
     finally{for(const shader of shaders)gl.deleteShader(shader);}
   }
-  private allocate(width:number,height:number):void {
-    if(this.dimensions===`${width}:${height}`)return;
+  private allocate(width:number,height:number,count=5):void {
+    if(this.dimensions===`${width}:${height}:${count}`)return;
     this.disposeTargets();const gl=this.gl;
-    try {for(let i=0;i<5;i++){
+    try {for(let i=0;i<count;i++){
       const texture=gl.createTexture(),fbo=gl.createFramebuffer();
       if(!texture||!fbo){if(texture)gl.deleteTexture(texture);if(fbo)gl.deleteFramebuffer(fbo);throw new Error('Wavelet buffer allocation failed');}
       this.targets.push({texture,fbo});gl.bindTexture(gl.TEXTURE_2D,texture);
@@ -77,7 +78,7 @@ export class SpatialQualityPass {
       gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA32F,width,height,0,gl.RGBA,gl.FLOAT,null);
       gl.bindFramebuffer(gl.FRAMEBUFFER,fbo);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,texture,0);
       if(gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE)throw new Error('Wavelet floating point target unavailable');
-    }this.dimensions=`${width}:${height}`;}catch(error){this.disposeTargets();throw error;}
+    }this.dimensions=`${width}:${height}:${count}`;}catch(error){this.disposeTargets();throw error;}
   }
   private bind(program:WebGLProgram,name:string,texture:WebGLTexture,unit:number):void {
     const gl=this.gl;gl.activeTexture(gl.TEXTURE0+unit);gl.bindTexture(gl.TEXTURE_2D,texture);
@@ -128,6 +129,47 @@ export class SpatialQualityPass {
         gl.uniform1f(gl.getUniformLocation(p,'u_amount'),amount);
       });
     }finally{gl.deleteTexture(texture);}
+  }
+  /** Complete Gaussian and guided stages; each reads the actual preceding RGB output. */
+  detail(graph:RenderGraph,width:number,height:number,settings:DevelopSettings,pixelScale:number):void {
+    const stages=[
+      {amount:settings.texture/100*1.2,sigma:pixelScale,guided:true,threshold:0},
+      {amount:settings.clarity/100*.85,sigma:4*pixelScale,guided:true,threshold:0},
+      {amount:settings.detail.sharpenAmount/100,sigma:Math.max(.5,settings.detail.sharpenRadius)*pixelScale,guided:false,threshold:settings.detail.sharpenThreshold/255},
+    ];
+    // Move any wavelet-owned output into the graph before releasing its buffers.
+    if(this.targets.some(target=>target.texture===graph.readTexture)) {
+      graph.runPass(this.programs[5],read=>this.bind(this.programs[5],'u_image',read,0));
+    }
+    this.disposeTargets();
+    if(!stages.some(stage=>stage.amount))return;
+    this.allocate(width,height,4);
+    const gl=this.gl,[moments,temp,mean,low]=this.targets;
+    const gaussian=(input:WebGLTexture,target:Target,sigma:number,x:number,y:number)=>{
+      this.draw(7,target,width,height,p=>{
+        this.bind(p,'u_image',input,0);
+        gl.uniform2i(gl.getUniformLocation(p,'u_axis'),x,y);
+        gl.uniform1f(gl.getUniformLocation(p,'u_sigma'),sigma);
+        gl.uniform1i(gl.getUniformLocation(p,'u_radius'),Math.ceil(3*sigma));
+      });
+    };
+    try {for(const stage of stages) {
+      if(!stage.amount)continue;
+      const original=graph.readTexture,sigma=Math.max(.35,stage.sigma);
+      this.draw(6,moments,width,height,p=>this.bind(p,'u_image',original,0));
+      gaussian(moments.texture,temp,sigma,1,0);gaussian(temp.texture,mean,sigma,0,1);
+      if(stage.guided) {
+        this.draw(8,moments,width,height,p=>this.bind(p,'u_image',mean.texture,0));
+        gaussian(moments.texture,temp,sigma,1,0);gaussian(temp.texture,low,sigma,0,1);
+      }
+      graph.runPass(this.programs[9],read=>{
+        const p=this.programs[9];this.bind(p,'u_image',read,0);
+        this.bind(p,'u_low',stage.guided ? low.texture : mean.texture,1);this.bind(p,'u_mean',mean.texture,2);
+        gl.uniform1i(gl.getUniformLocation(p,'u_guided'),stage.guided ? 1 : 0);
+        gl.uniform1f(gl.getUniformLocation(p,'u_amount'),stage.amount);
+        gl.uniform1f(gl.getUniformLocation(p,'u_threshold'),stage.threshold);
+      });
+    }} finally {this.disposeTargets();}
   }
   private disposeTargets():void {for(const t of this.targets){this.gl.deleteFramebuffer(t.fbo);this.gl.deleteTexture(t.texture);}this.targets=[];this.dimensions='';}
   dispose():void {this.disposeTargets();for(const p of this.programs)this.gl.deleteProgram(p);this.programs=[];if(this.quad)this.gl.deleteBuffer(this.quad);}

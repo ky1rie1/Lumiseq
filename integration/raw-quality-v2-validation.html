@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>RAW rendering version parity</title>
+<pre id="report">Running</pre><canvas id="surface"></canvas>
+<script type="module">
+import { RenderGraph } from '/src/engine/pipeline/RenderGraph.ts';
+import { SpatialQualityPass } from '/src/engine/pipeline/SpatialQualityPass.ts';
+import { BASE_TONE_VERTEX_SHADER, BASE_TONE_FRAGMENT_SHADER } from '/src/engine/shaders/passBaseTone.ts';
+import { SPATIAL_FRAGMENT_SHADER } from '/src/engine/shaders/passSpatialFilter.ts';
+import { COLOR_CURVE_FRAGMENT_SHADER } from '/src/engine/shaders/passColorCurve.ts';
+import { applySpatialImage } from '/src/engine/developSpatialMath.ts';
+import { applyBaseTone,applyDevelopColor,buildDevelopCurveLUT } from '/src/engine/developColorMath.ts';
+import { createDefaultDevelopSettings } from '/src/document/DevelopDocument.ts';
+const report={complete:false,passed:false,cases:[],errors:[]};
+try {
+ const canvas=document.querySelector('canvas'),gl=canvas.getContext('webgl2',{preserveDrawingBuffer:true});
+ if(!gl)throw new Error('WebGL2 unavailable');
+ const debug=gl.getExtension('WEBGL_debug_renderer_info');
+ report.renderer=debug ? gl.getParameter(debug.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+ const compile=fragment=>{
+  const p=gl.createProgram();
+  for(const [kind,source] of [[gl.VERTEX_SHADER,BASE_TONE_VERTEX_SHADER],[gl.FRAGMENT_SHADER,fragment]]) {
+   const shader=gl.createShader(kind);gl.shaderSource(shader,source);gl.compileShader(shader);
+   if(!gl.getShaderParameter(shader,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(shader));
+   gl.attachShader(p,shader);gl.deleteShader(shader);
+  }
+  gl.linkProgram(p);if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(p));return p;
+ };
+ const base=compile(BASE_TONE_FRAGMENT_SHADER),legacy=compile(SPATIAL_FRAGMENT_SHADER),color=compile(COLOR_CURVE_FRAGMENT_SHADER);
+ const graph=new RenderGraph(gl),quality=new SpatialQualityPass(gl);
+ const bind=(p,name,t,unit=0)=>{gl.activeTexture(gl.TEXTURE0+unit);gl.bindTexture(gl.TEXTURE_2D,t);gl.uniform1i(gl.getUniformLocation(p,name),unit);};
+ const run=(name,w,h,source,s,scale=1,withColor=false)=>{
+  canvas.width=w;canvas.height=h;graph.resize(w,h);
+  const texture=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,texture);
+  for(const p of [gl.TEXTURE_WRAP_S,gl.TEXTURE_WRAP_T])gl.texParameteri(gl.TEXTURE_2D,p,gl.CLAMP_TO_EDGE);
+  for(const p of [gl.TEXTURE_MIN_FILTER,gl.TEXTURE_MAG_FILTER])gl.texParameteri(gl.TEXTURE_2D,p,gl.NEAREST);
+  const rgba=new Float32Array(w*h*4);for(let i=0;i<w*h;i++){rgba.set(source.subarray(i*3,i*3+3),i*4);rgba[i*4+3]=1;}
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA32F,w,h,0,gl.RGBA,gl.FLOAT,rgba);
+  graph.begin(texture);
+  graph.runPass(base,read=>{
+   bind(base,'u_image',read);gl.uniform1i(gl.getUniformLocation(base,'u_input_linear'),1);gl.uniform1i(gl.getUniformLocation(base,'u_white_balance_applied'),1);
+   gl.uniform1i(gl.getUniformLocation(base,'u_rendering_version'),s.renderingVersion??1);gl.uniform1i(gl.getUniformLocation(base,'u_wb_mode'),0);
+   for(const name of ['exposure','contrast','highlights','shadows','whites','blacks'])gl.uniform1f(gl.getUniformLocation(base,'u_'+name),s[name]);
+  });
+  if(s.renderingVersion===2)quality.detail(graph,w,h,s,scale);
+  else graph.runPass(legacy,read=>{
+   bind(legacy,'u_image',read);gl.uniform2f(gl.getUniformLocation(legacy,'u_texel_size'),1/w,1/h);
+   for(const [name,value] of Object.entries({u_spatial_scale:scale,u_texture:s.texture,u_clarity:s.clarity,u_sharpen_amount:s.detail.sharpenAmount,u_sharpen_radius:s.detail.sharpenRadius,u_sharpen_threshold:s.detail.sharpenThreshold}))gl.uniform1f(gl.getUniformLocation(legacy,name),value);
+  });
+  const lut=buildDevelopCurveLUT(s.curves);
+  if(withColor)graph.runPass(color,read=>{
+   bind(color,'u_image',read);gl.uniform1i(gl.getUniformLocation(color,'u_curve_enabled'),0);gl.uniform1i(gl.getUniformLocation(color,'u_hsl_enabled'),1);
+   gl.uniform1f(gl.getUniformLocation(color,'u_vibrance'),s.vibrance);gl.uniform1f(gl.getUniformLocation(color,'u_saturation'),s.saturation);
+   for(const [name,v] of Object.entries(s.hsl))gl.uniform3f(gl.getUniformLocation(color,'u_hsl_'+name),v.hue*.3,1+v.saturation/100,v.luminance/200);
+  });
+  const fbo=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,fbo);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,graph.readTexture,0);
+  const result=new Float32Array(w*h*4);gl.readPixels(0,0,w,h,gl.RGBA,gl.FLOAT,result);
+  if(gl.getError()!==gl.NO_ERROR)throw new Error(name+' GPU error');
+  const cpuBase=new Float32Array(source.length);for(let i=0;i<w*h;i++)cpuBase.set(applyBaseTone(Array.from(source.subarray(i*3,i*3+3)),s),i*3);
+  const cpu=applySpatialImage(cpuBase,w,h,s,scale),actual=new Float32Array(source.length);
+  let maxError=0,sum=0,minimumAdded=0;
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+   const at=(y*w+x)*3,pixel=Array.from(cpu.subarray(at,at+3)),expected=withColor?applyDevelopColor(pixel,s,lut):pixel;
+   for(let c=0;c<3;c++){
+    const v=result[((h-1-y)*w+x)*4+c];actual[at+c]=v;
+    if(!Number.isFinite(v))throw new Error(name+' nonfinite output');
+    const d=Math.abs(v-expected[c]);maxError=Math.max(maxError,d);sum+=d;minimumAdded=Math.min(minimumAdded,v-source[at+c]);
+   }
+  }
+  report.cases.push({name,maxError,meanError:sum/source.length,minimumAdded,passed:maxError<2e-5});
+  gl.deleteFramebuffer(fbo);gl.deleteTexture(texture);return actual;
+ };
+ const n=61,round=new Float32Array(n*n*3);
+ for(let y=0;y<n;y++)for(let x=0;x<n;x++){
+  const v=.002+.8*Math.exp(-((x-30.25)**2+(y-29.5)**2)/2);round.set([v,v,v],(y*n+x)*3);
+ }
+ const s=createDefaultDevelopSettings(true);s.clarity=40;s.detail.sharpenAmount=80;s.detail.sharpenRadius=1.8;
+ const points=run('round point lights',n,n,round,s);report.cases.at(-1).passed&&=report.cases.at(-1).minimumAdded>-.001;
+ const rotate=a=>{const b=new Float32Array(a.length);for(let y=0;y<n;y++)for(let x=0;x<n;x++)for(let c=0;c<3;c++)b[(x*n+n-1-y)*3+c]=a[(y*n+x)*3+c];return b;};
+ const rotated=run('rotated subpixel point lights',n,n,rotate(round),s),reference=rotate(points);
+ const rotationError=Math.max(...rotated.map((v,i)=>Math.abs(v-reference[i])));report.cases.push({name:'GPU rotation symmetry',maxError:rotationError,passed:rotationError<2e-5});
+ s.texture=55;run('reduced original-pixel scales',n,n,round,s,.27);
+ const signed=Float32Array.from(Array.from({length:n*n},()=>[-.2,.4,3.5]).flat());run('signed HDR flat field',n,n,signed,s);
+ const edge=Float32Array.from(Array.from({length:n*n},(_,i)=>i%n+.7*Math.floor(i/n)>50?[2,-.1,.4]:[.002,.003,.006]).flat());run('inclined signed HDR edge',n,n,edge,s);
+ const tone=createDefaultDevelopSettings(true);Object.assign(tone,{exposure:-.3,contrast:25,highlights:-90,shadows:30,whites:-20,blacks:-10});
+ run('joint HDR tone staircase',7,1,Float32Array.from([.18,.5,1,2,4,8,16].flatMap(v=>[v,v,v])),tone);
+ const legacySettings=createDefaultDevelopSettings(false);delete legacySettings.renderingVersion;legacySettings.detail.sharpenAmount=100;
+ const legacyOut=run('legacy missing-version edge',5,1,Float32Array.from([.25,.25,.7,.7,.7].flatMap(v=>[v,v,v])),legacySettings);
+ report.cases.push({name:'legacy independent golden',actual:legacyOut[6],passed:Math.abs(legacyOut[6]-.80125)<2e-6});
+ const small=createDefaultDevelopSettings(true);small.contrast=60;
+ const tiny=run('sub-display contrast precision',4,1,Float32Array.from([1e-9,1e-8,1e-7,1e-6].flatMap(v=>[v,v,v])),small);
+ report.cases.push({name:'contrast derivative at black',actual:tiny[0]/1e-9,passed:Math.abs(tiny[0]/1e-9-2**.6)<1e-4});
+ const sharpening=createDefaultDevelopSettings(true);sharpening.detail.sharpenAmount=100;
+ const strong=run('ordinary edge strength',41,1,Float32Array.from(Array.from({length:41},(_,i)=>i<20?[.1,.1,.1]:[.4,.4,.4]).flat()),sharpening);
+ report.cases.push({name:'edge control strength',actual:strong[60]-.4,passed:strong[60]-.4>.045});
+ const smooth=createDefaultDevelopSettings(true);smooth.texture=-100;
+ const softened=run('negative texture smoothing',41,41,Float32Array.from(Array.from({length:41*41},(_,i)=>i%2?[.02,.02,.02]:[.04,.04,.04]).flat()),smooth);
+ report.cases.push({name:'texture control strength',actual:Math.abs(softened[(20*41+20)*3]-softened[(20*41+21)*3]),passed:Math.abs(softened[(20*41+20)*3]-softened[(20*41+21)*3])<.012});
+ tone.hsl.red={hue:15,saturation:-20,luminance:-50};tone.hsl.blue={hue:-10,saturation:25,luminance:30};tone.vibrance=30;tone.saturation=10;
+ run('preserved HSL and HDR color',3,1,Float32Array.from([2,0,0,.2,.3,1.5,.25,.2,.15]),tone,1,true);
+ const fixtureResponse=await fetch('/docs/superpowers/native-v2-fixture.json');
+ if(!fixtureResponse.ok)throw new Error('Generate native v2 fixtures before the three-backend probe');
+ const nativeFixtures=await fixtureResponse.json();
+ for(const fixture of nativeFixtures.cases) {
+  const s=createDefaultDevelopSettings(true),recipe=fixture.recipe;
+  for(const name of ['exposure','contrast','highlights','shadows','whites','blacks','texture','clarity'])s[name]=recipe[name];
+  s.detail.sharpenAmount=recipe.sharpen_amount;s.detail.sharpenRadius=recipe.sharpen_radius;s.detail.sharpenThreshold=recipe.sharpen_threshold;
+  const actual=run('native-source '+fixture.name,fixture.width,fixture.height,Float32Array.from(fixture.source.flat()),s),reference=fixture.output.flat();
+  const maximum=Math.max(...actual.map((v,i)=>Math.abs(v-reference[i])));
+  report.cases.push({name:'GPU/native '+fixture.name,maxError:maximum,passed:maximum<1e-5});
+ }
+ quality.dispose();graph.dispose();for(const p of [base,legacy,color])gl.deleteProgram(p);report.passed=report.cases.every(c=>c.passed);
+} catch(error) {report.errors.push(String(error));}
+report.complete=true;document.querySelector('#report').textContent=JSON.stringify(report,null,2);
+</script></html>

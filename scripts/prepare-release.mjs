@@ -6,11 +6,13 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { verifyWindowsRelease } from './windows-release.mjs';
+import { verifyReleaseVersionFiles } from './release-version.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const run = promisify(execFile);
 const output = path.join(root, 'artifacts', 'windows');
 const pkg = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
+await verifyReleaseVersionFiles(root);
 const executable = path.join(output, 'lumiseq.exe');
 verifyWindowsRelease(output);
 const { stdout: binaryVersion } = await run('powershell', ['-NoProfile', '-Command', '(Get-Item -LiteralPath $env:LUMISEQ_RELEASE_EXE).VersionInfo.FileVersion'], {

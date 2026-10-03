@@ -46,6 +46,9 @@ Lumiseq 的规范工具位于 `src/ai/tools/`。内置 AI 和外部 MCP 调用�
 | `studio_inspect_region` | 原文档坐标的区域观察或 1:1 细节 |
 | `studio_get_observation` | 按观察 ID 读取保留的图像或证据 |
 | `studio_get_develop_parameter_specs` | RAW 参数范围 |
+| `studio_auto_tone` | 按真实源样本联动六项影调，一步撤销，返回精度及检查证据 |
+| `studio_upgrade_rendering` | 显式照片 ID 创建新版调色副本，保留 RAW 解码及坐标 |
+| `studio_reset_group` | 重置 basic / color / curves / detail / optics 参数组，一步撤销 |
 | `studio_develop_set_parameter` | 设置 RAW 参数，包括细节与 HSL |
 | `studio_set_curves` | 设置四个归一化曲线通道 |
 | `studio_copy_settings` | 从指定照片复制参数到会话剪贴板 |
@@ -61,6 +64,8 @@ Lumiseq 的规范工具位于 `src/ai/tools/`。内置 AI 和外部 MCP 调用�
 | `studio_undo` / `studio_redo` | 撤销与重做 |
 
 完整名称映射位于 `src/ai/tools/schemaAdapters/MCPSchemaAdapter.ts`，工具参数由注册表生成。不要依赖历史文档中的旧别名作为唯一接口。
+
+自动影调成功只表示参数已提交。先检查整图，再用同坐标原尺寸观察复核星点、人脸、边缘及高光；返回的 `detailVerification: "native-region-required"` 明确要求检查最终空间处理结果。旧工程的渲染版本默认是 1；`studio_upgrade_rendering` 创建独立版本 2 副本，不等同于会改变镜头坐标的 RAW 解码升级。
 
 图层服务使用显式的 `documentId`、`layerId`。锁定错误返回 `LAYER_LOCKED`；修改子图层前必须解锁其父组。内容编辑、删除和重新归组遵守相同策略，可见性与只读查询仍可使用。复制只共享不可变素材引用，副本参数、图层及蒙版标识独立；对齐／翻转各产生一个可撤销命令。
 

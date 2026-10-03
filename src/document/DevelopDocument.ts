@@ -10,6 +10,7 @@ export function createDefaultDevelopSettings(isRaw: boolean): DevelopSettings {
 
   return {
     version: 3,
+    renderingVersion: 2,
     exposure: 0.0,
     contrast: 0,
     highlights: 0,
@@ -97,6 +98,7 @@ export function createDevelopDocument(params: {
     settings: {
       ...defaultSettings,
       ...(params.settings || {}),
+      renderingVersion: params.settings ? (params.settings.renderingVersion ?? 1) : 2,
       whiteBalance: {
         ...defaultSettings.whiteBalance,
         ...(params.settings?.whiteBalance || {}),

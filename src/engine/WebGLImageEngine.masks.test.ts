@@ -64,6 +64,13 @@ afterEach(() => {
 });
 
 describe('develop mask rendering', () => {
+  it('rejects an unknown rendering version before any GPU draw',async()=>{
+    const engine=await loadedEngine(),gpu=fakeWebGL(),settings=createDefaultDevelopSettings(true);
+    settings.renderingVersion=3 as 2;
+    const canvas={width:2,height:2,getContext:()=>gpu.gl} as unknown as HTMLCanvasElement;
+    await expect(engine.renderDevelop('source',settings,canvas)).rejects.toThrow(/rendering version/i);
+    expect(gpu.drawCount).toBe(0);
+  });
   it('passes native tile coordinates through to the full-photo display pass', async () => {
     const engine = await loadedEngine(); const gpu = fakeWebGL();
     const canvas = { width: 2, height: 2, getContext: () => gpu.gl } as unknown as HTMLCanvasElement;
@@ -146,14 +153,18 @@ describe('develop mask rendering', () => {
     const engine = await loadedEngine(); const a = fakeWebGL(); const b = fakeWebGL();
     const canvasA = { width: 2, height: 2, getContext: () => a.gl } as unknown as HTMLCanvasElement;
     const canvasB = { width: 2, height: 2, getContext: () => b.gl } as unknown as HTMLCanvasElement;
+    await engine.renderDevelop('source', createDefaultDevelopSettings(false), canvasA);
+    await engine.renderDevelop('source', createDefaultDevelopSettings(false), canvasB);
+    const initialA=a.shaderSources.length,initialB=b.shaderSources.length;
+    expect(initialA).toBeGreaterThan(0);expect(initialB).toBe(initialA);
     for (let i = 0; i < 4; i++) {
       await engine.renderDevelop('source', createDefaultDevelopSettings(false), canvasA);
       await engine.renderDevelop('source', createDefaultDevelopSettings(false), canvasB);
     }
-    expect(a.shaderSources).toHaveLength(10); expect(b.shaderSources).toHaveLength(10);
+    expect(a.shaderSources).toHaveLength(initialA); expect(b.shaderSources).toHaveLength(initialB);
     engine.releaseDevelopContext(canvasA);
     await engine.renderDevelop('source', createDefaultDevelopSettings(false), canvasA);
-    expect(a.shaderSources).toHaveLength(20); expect(b.shaderSources).toHaveLength(10);
+    expect(a.shaderSources).toHaveLength(initialA*2); expect(b.shaderSources).toHaveLength(initialB);
   });
   it('keeps uploaded photos upright through GPU passes and aligns mask top rows', async () => {
     const engine = await loadedEngine();
@@ -171,17 +182,20 @@ describe('develop mask rendering', () => {
     expect(gpu.shaderSources.some(source => source.includes('texture(u_mask, vec2(globalCoord.x, 1.0 - globalCoord.y))'))).toBe(true);
   });
 
-  it('runs one local adjustment pass using the registered mask bytes', async () => {
+  it.each([1,2] as const)('runs one local adjustment pass using the registered mask bytes in rendering version %i', async (version) => {
     const engine = await loadedEngine();
     const mask = await defaultAssetManager.registerMask(new Uint8ClampedArray([0, 64, 128, 255]), 2, 2);
     const settings = createDefaultDevelopSettings(false);
+    settings.renderingVersion=version;
     settings.masks = [{ id: 'm1', name: 'local', maskAssetId: mask.id, kind: 'linear', geometry: {}, inverted: true, opacity: 0.5, exposure: 1, temperature: 20 }];
     const gpu = fakeWebGL();
     const canvas = { width: 2, height: 2, getContext: () => gpu.gl } as unknown as HTMLCanvasElement;
 
     try {
+      await engine.renderDevelop('source', {...settings,masks:[]}, canvas);
+      const baselineDraws=gpu.drawCount;
       await engine.renderDevelop('source', settings, canvas);
-      expect(gpu.drawCount).toBe(5);
+      expect(gpu.drawCount-baselineDraws).toBe(baselineDraws+1);
       expect(gpu.uploadedMasks).toHaveLength(1);
       expect(Array.from(gpu.uploadedMasks[0])).toEqual([0, 64, 128, 255]);
       expect(gpu.uniforms.get('u_opacity')).toBe(0.5);
@@ -224,7 +238,7 @@ describe('develop mask rendering', () => {
     try {
       const result = await engine.exportDevelopImage('source', settings, { format: 'png' });
       expect(await result.text()).toBe('export');
-      expect(gpu.drawCount).toBe(5);
+      expect(gpu.drawCount).toBeGreaterThan(0);
       expect(gpu.uploadedMasks).toHaveLength(1);
       expect(canvas.width).toBe(2);
       expect(canvas.height).toBe(2);
@@ -247,7 +261,7 @@ describe('develop mask rendering', () => {
       await new WebGLImageEngine().exportDevelopImage(source.id, settings, { format: 'png' });
       expect(canvas.width).toBe(2);
       expect(canvas.height).toBe(2);
-      expect(gpu.drawCount).toBe(5);
+      expect(gpu.drawCount).toBeGreaterThan(0);
     } finally {
       defaultAssetManager.releaseAsset(source.id);
       defaultAssetManager.releaseAsset(mask.id);

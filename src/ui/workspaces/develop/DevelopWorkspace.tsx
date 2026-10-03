@@ -26,6 +26,8 @@ import {
   Hand,
   PanelLeft,
   Pipette,
+  Copy,
+  ClipboardPaste,
 } from 'lucide-react';
 import { useDevelopStore } from '../../../stores/useDevelopStore';
 import { useAppStore } from '../../../stores/useAppStore';
@@ -42,7 +44,11 @@ import { AccordionSection } from '../../shared/AccordionSection';
 import { ScrubbableInput } from '../../shared/ScrubbableInput';
 import { SegmentedControl } from '../../shared/SegmentedControl';
 import { CurveEditor } from './CurveEditor';
-import { DevelopSettingsMenu } from './DevelopSettingsMenu';
+import { DevelopSettingsMenu, type DevelopSettingsMenuHandle } from './DevelopSettingsMenu';
+import { ContextMenuScope, useContextMenu, type ContextMenuItem } from '../../shared/ContextMenu';
+import { guardMenuDocument } from '../../shared/contextMenuTargets';
+import { defaultDocumentManager } from '../../../document/DocumentManager';
+import type { DevelopSettingsGroup } from '../../../develop/DevelopSettingsClipboard';
 import { PipelineDebugInspector } from './PipelineDebugInspector';
 import { PARAM_DEFINITIONS } from '../../shared/parameterDefinitions';
 import { defaultDevelopOperations } from '../../../develop/DevelopOperationService';
@@ -119,6 +125,8 @@ export const DevelopWorkspace: React.FC<{ onExport: () => void }> = ({ onExport 
   const checkerSize = useStudioPreferences(s => s.preferences.checkerSize);
   const checkerTone = useStudioPreferences(s => s.preferences.checkerTone);
   const [isAdjusting, setIsAdjusting] = useState(false);
+  const canvasMenu = useContextMenu(currentDoc?.id, setStatusMessage);
+  const settingsMenu = useRef<DevelopSettingsMenuHandle>(null);
   const startSettingDrag = (documentId: string, description: string) => { beginSettingDrag(documentId, description); setIsAdjusting(true); };
   const commitSettingDrag = () => { try { finishSettingDrag(); } finally { setIsAdjusting(false); } };
   const [comparisonId, setComparisonId] = useState<string | null>(null);
@@ -147,8 +155,10 @@ export const DevelopWorkspace: React.FC<{ onExport: () => void }> = ({ onExport 
     const generation = autoToneGeneration.current;
     setIsAutoToning(true);
     try {
-      const applied = await defaultDevelopAutoTone.apply(currentDoc.id, () => generation === autoToneGeneration.current);
-      if (applied) setStatusMessage('自动影调调整完成，可撤销；白平衡与色彩调整已保留');
+      const applied = await defaultDevelopAutoTone.applyWithResult(currentDoc.id, () => generation === autoToneGeneration.current);
+      if (applied) setStatusMessage(applied.evidence?.scene==='low-key'
+        ? '自动影调完成，已保留暗场氛围；白平衡与色彩调整已保留，可撤销'
+        : '自动影调调整完成，可撤销；白平衡与色彩调整已保留');
     } catch (error) {
       if (generation === autoToneGeneration.current) setStatusMessage(`自动调整失败：${error instanceof Error ? error.message : String(error)}`);
     } finally { if (generation === autoToneGeneration.current) setIsAutoToning(false); }
@@ -377,9 +387,34 @@ export const DevelopWorkspace: React.FC<{ onExport: () => void }> = ({ onExport 
 
   const currentHsl = settings.hsl?.[activeHslChannel] || { hue: 0, saturation: 0, luminance: 0 };
   const selectedMask = settings.masks.find((mask) => mask.id === selectedMaskId) ?? null;
+  const guard = () => { guardMenuDocument(defaultDocumentManager, currentDoc.id, currentDoc); };
+  const wrap = (action: () => unknown) => () => { guard(); return action(); };
+  const groupMenu = (group: DevelopSettingsGroup): ContextMenuItem[] => [
+    { id: 'copy', label: '复制调色参数', icon: <Copy/>, disabled: isAdjusting, reason: '请先结束当前调整', run: wrap(() => { defaultDevelopOperations.copySettings(currentDoc.id); setStatusMessage('调色参数已复制'); }) },
+    { id: 'paste', label: group === 'color' ? '粘贴色彩组（含白平衡）' : '粘贴该组', icon: <ClipboardPaste/>, disabled: isAdjusting || !defaultDevelopOperations.clipboard.getSnapshot(), reason: isAdjusting ? '请先结束当前调整' : '请先复制调色参数', run: wrap(async () => { await defaultDevelopOperations.pasteSettings(currentDoc.id, [group], group === 'color'); setStatusMessage('分组参数已粘贴，可撤销'); }) },
+    { id: 'reset', label: group === 'color' ? '重置色彩组（含白平衡）' : '重置该组', icon: <RotateCcw/>, separatorBefore: true, disabled: isAdjusting, reason: '请先结束当前调整', run: wrap(() => defaultDevelopOperations.resetGroup(currentDoc.id, group, 'manual')) },
+  ];
+  const canvasMenuItems = (): ContextMenuItem[] => [
+    { id: 'fit', label: '适合窗口', shortcut: 'Ctrl+0', run: wrap(() => viewport.action('fit')) },
+    { id: 'actual', label: '100%', shortcut: 'Ctrl+1', run: wrap(() => viewport.action('actual')) },
+    { id: 'zoom-in', label: '放大', icon: <ZoomIn/>, run: wrap(() => viewport.action('in')) },
+    { id: 'zoom-out', label: '缩小', icon: <ZoomOut/>, run: wrap(() => viewport.action('out')) },
+    { id: 'compare', label: showOriginal ? '显示当前调色' : '前后对比', icon: <ArrowRightLeft/>, shortcut: '\\', separatorBefore: true, disabled: !!comparisonId, reason: '请先关闭并排对比', run: wrap(() => setShowOriginal(value => !value)) },
+    { id: 'auto-tone', label: '自动影调', icon: <Sparkles/>, disabled: isAdjusting || isAutoToning || !(currentDoc.sourceAssetId || currentDoc.previewAssetId), reason: isAutoToning ? '正在分析影调' : isAdjusting ? '请先结束当前调整' : '图像尚未载入', run: wrap(handleAutoTone) },
+    { id: 'copy', label: '复制调色参数', icon: <Copy/>, separatorBefore: true, disabled: isAdjusting, reason: '请先结束当前调整', run: wrap(() => { defaultDevelopOperations.copySettings(currentDoc.id); setStatusMessage('调色参数已复制'); }) },
+    { id: 'paste', label: '选择性粘贴调色…', icon: <ClipboardPaste/>, disabled: isAdjusting || !defaultDevelopOperations.clipboard.getSnapshot(), reason: isAdjusting ? '请先结束当前调整' : '请先复制调色参数', run: wrap(() => settingsMenu.current?.openPaste()) },
+    ...(currentDoc.isRaw && currentDoc.settings.renderingVersion !== 2 ? [{ id: 'upgrade', label: '创建新版调色副本', icon: <Sparkles/>, disabled: isAdjusting || isCreatingRawVariant || rawState !== 'ready', reason: isAdjusting ? '请先结束当前调整' : isCreatingRawVariant ? '正在创建副本' : '请等待 RAW 解码完成', run: wrap(async () => {
+      setIsCreatingRawVariant(true);
+      try { await defaultDevelopOperations.createRenderingUpgrade(currentDoc.id); setStatusMessage('已创建新版调色副本，原工程已保留'); }
+      finally { setIsCreatingRawVariant(false); }
+    }) }] : []),
+    { id: 'export', label: '导出…', icon: <Download/>, separatorBefore: true, disabled: isExporting || isAdjusting, reason: isExporting ? '正在导出' : '请先结束当前调整', run: wrap(onExport) },
+  ];
 
   return (
+    <ContextMenuScope.Provider value={{ id: currentDoc.id, guard, disabled: isAdjusting, reason: '请先结束当前调整' }}>
     <div className="develop-workbench flex-1 flex flex-col h-full bg-studio-950 text-studio-200 select-none overflow-hidden relative">
+      {canvasMenu.node}
       {/* Debug Inspector Modal */}
       <PipelineDebugInspector
         document={currentDoc}
@@ -446,7 +481,7 @@ export const DevelopWorkspace: React.FC<{ onExport: () => void }> = ({ onExport 
         </div>
 
         <div className="develop-operation-actions flex items-center space-x-2 shrink-0">
-          <DevelopSettingsMenu key={currentDoc.id} documentId={currentDoc.id} disabled={isAdjusting} onStatus={setStatusMessage} />
+          <DevelopSettingsMenu ref={settingsMenu} key={currentDoc.id} documentId={currentDoc.id} disabled={isAdjusting} onStatus={setStatusMessage} />
           {/* Before/After Toggle */}
           <button
             onClick={() => setShowOriginal(!showOriginal)}
@@ -568,8 +603,10 @@ export const DevelopWorkspace: React.FC<{ onExport: () => void }> = ({ onExport 
         </aside>
 
         {/* Center: Strict 18% Neutral Gray Canvas Viewport (Rule 8 & Stage E) */}
-        <main ref={viewport.ref} aria-label="调色画布" style={{ backgroundColor: colorAssessment ? '#767676' : canvasBackground, cursor: maskDrawMode && !viewport.space ? 'crosshair' : viewport.cursor }} className={`develop-canvas-viewport flex-1 min-w-0 relative overflow-hidden${colorAssessment?' is-color-assessment':''}`}
-          onPointerDownCapture={viewport.pointerDown} onPointerMove={event=>{viewport.pointerMove(event);inspectPreview(event);}} onPointerLeave={()=>setInspectedColor(null)} onPointerUp={viewport.pointerUp} onPointerCancel={viewport.pointerUp}>
+        <main ref={viewport.ref} tabIndex={0} aria-label="调色画布" style={{ backgroundColor: colorAssessment ? '#767676' : canvasBackground, cursor: maskDrawMode && !viewport.space ? 'crosshair' : viewport.cursor }} className={`develop-canvas-viewport flex-1 min-w-0 relative overflow-hidden${colorAssessment?' is-color-assessment':''}`}
+          onContextMenu={event => canvasMenu.open(event, canvasMenuItems(), '调色画布操作')}
+          onKeyDown={event => canvasMenu.key(event, canvasMenuItems, '调色画布操作')}
+          onPointerDownCapture={event => { if (event.button === 2) { event.preventDefault(); event.stopPropagation(); return; } viewport.pointerDown(event); }} onPointerMove={event=>{viewport.pointerMove(event);inspectPreview(event);}} onPointerLeave={()=>setInspectedColor(null)} onPointerUp={viewport.pointerUp} onPointerCancel={viewport.pointerUp}>
           {showOriginal && !comparisonId && (
             <div className="develop-original-label">
               <Eye className="w-3.5 h-3.5" />
@@ -654,7 +691,8 @@ export const DevelopWorkspace: React.FC<{ onExport: () => void }> = ({ onExport 
             <button type="button" onClick={handleAutoTone} disabled={isAutoToning || isAdjusting || !(currentDoc.sourceAssetId || currentDoc.previewAssetId)} className="w-full flex items-center justify-center gap-2 py-2 rounded border border-studio-700 bg-studio-800 hover:bg-studio-700 disabled:opacity-50" title="根据画面分布自动调整影调，并约束高光溢出；保留白平衡与色彩调整，可撤销。">
               <Sparkles className="w-3.5 h-3.5" />{isAutoToning ? '正在分析…' : '自动'}
             </button>
-            <DevelopToolBrowser group={toolGroup} setGroup={setToolGroup} query={toolQuery} setQuery={setToolQuery}>
+            <DevelopToolBrowser group={toolGroup} setGroup={setToolGroup} query={toolQuery} setQuery={setToolQuery}
+              contextScope={currentDoc.id} contextItems={group => group === 'basic' || group === 'color' || group === 'detail' ? groupMenu(group) : []}>
             <div id="dev-sec-looks"><DevelopLooksPanel key={currentDoc.id} document={currentDoc} settings={settings} onCompare={setComparisonId} onError={message => setStatusMessage(`预设 / 快照失败：${message}`)} /></div>
             <AccordionSection
               id="dev-sec-masks"
@@ -679,6 +717,7 @@ export const DevelopWorkspace: React.FC<{ onExport: () => void }> = ({ onExport 
             {/* Section 1: Basic Tone */}
             <AccordionSection
               id="dev-sec-basic"
+              contextScope={currentDoc.id} contextItems={() => groupMenu('basic')}
               title="基础影调"
               icon={<Sun className="w-3.5 h-3.5 text-amber-400" />}
               onResetSection={() => resetSection(currentDoc.id, 'basic')}
@@ -732,6 +771,7 @@ export const DevelopWorkspace: React.FC<{ onExport: () => void }> = ({ onExport 
             {/* Section 2: White Balance & Color */}
             <AccordionSection
               id="dev-sec-wb"
+              contextScope={currentDoc.id} contextItems={() => groupMenu('color')}
               title="白平衡"
               icon={<Thermometer className="w-3.5 h-3.5 text-blue-400" />}
               onResetSection={() => resetSection(currentDoc.id, 'wb')}
@@ -784,6 +824,7 @@ export const DevelopWorkspace: React.FC<{ onExport: () => void }> = ({ onExport 
             {/* Section 3: Presence & Vibrance */}
             <AccordionSection
               id="dev-sec-presence"
+              contextScope={currentDoc.id} contextItems={() => groupMenu('color')}
               title="质感与饱和度"
               icon={<Sparkles className="w-3.5 h-3.5 text-indigo-400" />}
               onResetSection={() => resetSection(currentDoc.id, 'presence')}
@@ -830,6 +871,7 @@ export const DevelopWorkspace: React.FC<{ onExport: () => void }> = ({ onExport 
             {/* Section 4: Tone Curves */}
             <AccordionSection
               id="dev-sec-curves"
+              contextScope={currentDoc.id} contextItems={() => groupMenu('curves')}
               title="色调曲线"
               icon={<Sliders className="w-3.5 h-3.5 text-purple-400" />}
               onResetSection={() => resetSection(currentDoc.id, 'curves')}
@@ -853,6 +895,7 @@ export const DevelopWorkspace: React.FC<{ onExport: () => void }> = ({ onExport 
             {/* Section 5: HSL Color Mixer */}
             <AccordionSection
               id="dev-sec-hsl"
+              contextScope={currentDoc.id} contextItems={() => groupMenu('color')}
               title="颜色混合 (HSL)"
               icon={<Palette className="w-3.5 h-3.5 text-emerald-400" />}
               onResetSection={() => resetSection(currentDoc.id, 'hsl')}
@@ -914,6 +957,7 @@ export const DevelopWorkspace: React.FC<{ onExport: () => void }> = ({ onExport 
             {/* Section 6: Detail & Sharpening */}
             <AccordionSection
               id="dev-sec-detail"
+              contextScope={currentDoc.id} contextItems={() => groupMenu('detail')}
               title="细节与降噪"
               icon={<Focus className="w-3.5 h-3.5 text-rose-400" />}
               onResetSection={() => resetSection(currentDoc.id, 'detail')}
@@ -960,6 +1004,7 @@ export const DevelopWorkspace: React.FC<{ onExport: () => void }> = ({ onExport 
             {/* Section 7: Optics & Vignette */}
             <AccordionSection
               id="dev-sec-optics"
+              contextScope={currentDoc.id} contextItems={() => groupMenu('optics')}
               title="镜头与晕影"
               icon={<Disc className="w-3.5 h-3.5 text-cyan-400" />}
               onResetSection={() => resetSection(currentDoc.id, 'optics')}
@@ -1011,5 +1056,6 @@ export const DevelopWorkspace: React.FC<{ onExport: () => void }> = ({ onExport 
         <output className="develop-color-readout" aria-label="预览颜色读数"><Pipette size={12}/>{inspectedColor ? <><i style={{backgroundColor:`rgb(${inspectedColor.rgb.join(',')})`}}/><span>RGB {inspectedColor.rgb.join(' / ')}</span><span title="CIELAB · D50 / 2°">Lab {inspectedColor.lab.map(value=>value.toFixed(1)).join(' / ')}</span><small>{inspectedColor.label} · sRGB 8 位</small></>:<span>移到照片上查看颜色 · 预览采样</span>}</output>
       </div>
     </div>
+    </ContextMenuScope.Provider>
   );
 };

@@ -2,6 +2,18 @@ import { describe, expect, it } from 'vitest';
 import { createDefaultDevelopSettings } from '../document/DevelopDocument';
 import { applyBaseTone, applyDevelopColor, applyRelativeWhiteBalance, buildDevelopCurveLUT, curvesAreNeutral, linearToSrgb, luminance, relativeWhiteBalanceMatrix, sampleDevelopCurve, srgbToLinear, type RGB } from './developColorMath';
 describe('develop color contract',()=>{
+ it('honors preserved HSL luminance when evaluating a saturated HDR red',()=>{
+  const settings=createDefaultDevelopSettings(true);settings.hsl.red.luminance=-50;
+  const result=applyDevelopColor([2,0,0],settings,buildDevelopCurveLUT(settings.curves));
+  expect(result[0]).toBeGreaterThan(1);expect(result[0]).toBeLessThan(1.5);
+  expect(result[1]).toBeCloseTo(0,8);expect(result[2]).toBeCloseTo(0,8);
+ });
+ it('keeps the version two neutral-luminance branch continuous under contrast',()=>{
+  const settings=createDefaultDevelopSettings(true);settings.contrast=60;
+  const rgb:RGB=[1,-.2126/.7152,0];
+  const exact=applyBaseTone(rgb,settings),near=applyBaseTone([rgb[0],rgb[1]+1e-8,0],settings);
+  expect(Math.abs(exact[0]-near[0])).toBeLessThan(1e-6);
+ });
  it('keeps signed gamut values through neutral white balance and color',()=>{
   const settings=createDefaultDevelopSettings(true),input:RGB=[-.125,1.5,.000001];
   expect(applyRelativeWhiteBalance(input,[1,0,0,0,1,0,0,0,1])).toEqual(input);

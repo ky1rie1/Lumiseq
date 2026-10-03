@@ -84,3 +84,5 @@ mod tests {
         assert!(!DecodeJobTracker::is_cancelled(job));
     }
 }
+
+pub mod detail_v2;

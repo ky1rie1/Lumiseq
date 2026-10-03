@@ -1,9 +1,12 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useContext } from 'react';
 import { Point2D } from '../../../types/common';
 import { ToneCurves } from '../../../types/develop';
 import { SegmentedControl } from '../../shared/SegmentedControl';
 import { buildMonotonicCurveLUT } from '../../../engine/curveLut';
-import { RotateCcw } from 'lucide-react';
+import { RotateCcw, Trash2, Pencil } from 'lucide-react';
+import { ContextMenuScope, useContextMenu, type ContextMenuItem } from '../../shared/ContextMenu';
+import { defaultDocumentManager } from '../../../document/DocumentManager';
+import { guardMenuDocument } from '../../shared/contextMenuTargets';
 import { cssToCurve, curveToCss, hitCurvePoint, moveCurvePoint, numericCurvePosition, startCurvePointer } from './curveCoordinates';
 
 export type CurveChannelType = keyof ToneCurves;
@@ -25,6 +28,11 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({ curves, onChangeCurves
   const [selected, setSelected] = useState<number | null>(null);
   const [draft, setDraft] = useState({ x: '', y: '' });
   const [error, setError] = useState('');
+  const scope = useContext(ContextMenuScope);
+  const menu = useContextMenu(scope?.id, setError);
+  const yInput = useRef<HTMLInputElement>(null);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   // The edit adjustment panel also uses this editor: keep its discrete callback compatible.
   const [localCurves, setLocalCurves] = useState<ToneCurves | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -131,6 +139,25 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({ curves, onChangeCurves
     if (index === null || index === 0 || index === points.length - 1) return;
     change({ ...values.current, [channel]: points.filter((_, i) => i !== index) }); select(null);
   };
+  const pointMenu = (index: number | null): ContextMenuItem[] => {
+    const capturedChannel = channel, capturedPoints = values.current[channel], capturedScope = scope;
+    const capturedDocument = defaultDocumentManager.getActiveDocument();
+    const target = index === null ? undefined : capturedPoints[index];
+    const endpoint = index === 0 || index === capturedPoints.length - 1;
+    const guard = () => {
+      capturedScope?.guard();
+      if (!capturedScope && capturedDocument) guardMenuDocument(defaultDocumentManager, capturedDocument.id, capturedDocument);
+      if (!mounted.current || values.current[capturedChannel] !== capturedPoints || !target) throw new Error('曲线控制点已改变，请重新打开菜单。');
+    };
+    return [
+      { id: 'coordinates', label: '编辑坐标…', icon: <Pencil/>, disabled: !target || !enabled || scope?.disabled, reason: !target ? '请右击曲线控制点' : scope?.reason, run: () => {
+        guard(); select(index); setChannel(capturedChannel); requestAnimationFrame(() => yInput.current?.focus());
+      } },
+      { id: 'delete', label: '删除控制点', icon: <Trash2/>, shortcut: 'Delete', disabled: !target || endpoint || !enabled || scope?.disabled, reason: endpoint ? '端点不能删除' : !target ? '请右击曲线控制点' : scope?.reason, run: () => {
+        guard(); change({ ...values.current, [capturedChannel]: capturedPoints.filter((_, i) => i !== index) }); select(null);
+      } },
+    ];
+  };
   const keyDown = (event: React.KeyboardEvent<HTMLCanvasElement>) => {
     if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); end(true); return; }
     if (event.key === 'Delete' || event.key === 'Backspace') { event.preventDefault(); event.stopPropagation(); remove(); return; }
@@ -161,6 +188,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({ curves, onChangeCurves
   };
 
   return <div className="curve-editor space-y-2 select-none">
+    {menu.node}
     <div className="flex items-center justify-between">
       <div className="w-56"><SegmentedControl<CurveChannelType> options={[
         { id: 'rgb', label: 'RGB' }, { id: 'red', label: '红' }, { id: 'green', label: '绿' }, { id: 'blue', label: '蓝' },
@@ -186,12 +214,16 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({ curves, onChangeCurves
         onPointerMove={event => { if (event.pointerId === pointer.current) update(position(event).coord); }}
         onPointerUp={event => { if (event.pointerId === pointer.current) end(false); }}
         onPointerCancel={() => end(true)} onLostPointerCapture={() => { if (pointer.current !== null) end(true); }}
-        onKeyDown={keyDown} onKeyUp={event => { if (keys.current.delete(event.key)) { event.preventDefault(); event.stopPropagation(); if (!keys.current.size) end(false); } }}
-        onBlur={() => end(false)} onContextMenu={event => { event.preventDefault(); remove(); }} className="cursor-crosshair rounded block" />
+        onKeyDown={event => { menu.key(event, () => pointMenu(selection.current), '曲线控制点'); if (!event.defaultPrevented) keyDown(event); }} onKeyUp={event => { if (keys.current.delete(event.key)) { event.preventDefault(); event.stopPropagation(); if (!keys.current.size) end(false); } }}
+        onBlur={() => end(false)} onContextMenu={event => {
+          const box = event.currentTarget.getBoundingClientRect();
+          const index = event.clientX || event.clientY ? hitCurvePoint(values.current[channel], {x:event.clientX-box.left,y:event.clientY-box.top},box.width,box.height) : selection.current;
+          menu.open(event, pointMenu(index), '曲线控制点');
+        }} className="cursor-crosshair rounded block" />
     </div>
     <form className="curve-coordinates" onSubmit={event => { event.preventDefault(); submitNumbers(); }} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) submitNumbers(); }}>
       <label>X <input aria-label="曲线输入 X" type="number" min={0} max={255} step={1} disabled={!point || selected === 0 || selected === points.length - 1} value={draft.x} onChange={event => setDraft({ ...draft, x: event.target.value })} onKeyDown={numberKey} /></label>
-      <label>Y <input aria-label="曲线输出 Y" type="number" min={0} max={255} step={1} disabled={!point} value={draft.y} onChange={event => setDraft({ ...draft, y: event.target.value })} onKeyDown={numberKey} /></label>
+      <label>Y <input ref={yInput} aria-label="曲线输出 Y" type="number" min={0} max={255} step={1} disabled={!point} value={draft.y} onChange={event => setDraft({ ...draft, y: event.target.value })} onKeyDown={numberKey} /></label>
       <button type="submit" disabled={!point}>应用</button>
       <button type="button" onClick={() => { end(true); change({ rgb: identity(), red: identity(), green: identity(), blue: identity() }); select(null); }}>全部重置</button>
     </form>

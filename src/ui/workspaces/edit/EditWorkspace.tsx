@@ -20,7 +20,10 @@ import { Point, Rect, SelectionMode } from '../../../selection/types';
 import { SelectionBar } from './SelectionBar';
 import { Toolbar } from './Toolbar';
 import { EditTool, LastUsedTools, findToolByShortcut, toolDefinition } from './editTools';
-import { canClosePolygon, constrainDragRect, resolveSelectionMode } from './toolGestures';
+import { canvasPointerIntent, canClosePolygon, constrainDragRect, resolveSelectionMode } from './toolGestures';
+import { useContextMenu, type ContextMenuItem } from '../../shared/ContextMenu';
+import { guardMenuDocument, guardMenuLayer } from '../../shared/contextMenuTargets';
+import { defaultLayerOperationService } from '../../../edit/LayerOperationService';
 import { ContextToolbar } from './ContextToolbar';
 import { PropertiesPanel } from './PropertiesPanel';
 import { LayersPanel } from './LayersPanel';
@@ -103,6 +106,7 @@ export const EditWorkspace: React.FC<{ onExport: () => void }> = ({ onExport }) 
   const [snapEnabled, setSnapEnabled] = useState(true);
   const [newTextPrompt, setNewTextPrompt] = useState('示例文字');
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const canvasMenu = useContextMenu(currentDoc?.id, setStatusMessage);
   const [displayScale, setDisplayScale] = useState(1);
   const rasterizationRequests = useRef(new Set<string>());
   const [cutoutOpen, setCutoutOpen] = useState(false);
@@ -597,6 +601,8 @@ export const EditWorkspace: React.FC<{ onExport: () => void }> = ({ onExport }) 
   // Canvas Pointer Down (Unified Mouse, Stylus/Pen with Pressure, Touch)
   const handlePointerDown = async (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!currentDoc || !canvasRef.current) return;
+    const intent = canvasPointerIntent({ button: e.button, tool: activeTool, space: isSpacePressedRef.current });
+    if (intent === 'context' || intent === 'ignore') return;
 
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
@@ -608,7 +614,7 @@ export const EditWorkspace: React.FC<{ onExport: () => void }> = ({ onExport }) 
     const input = extractPointerInput(e, { docX, docY });
 
     // Pan mode (Space key, Hand tool, or Middle Click)
-    if (isSpacePressedRef.current || activeTool === 'hand' || input.button === 1) {
+    if (intent === 'pan') {
       isPanningRef.current = true;
       dragStartRef.current.screenMouseX = input.x;
       dragStartRef.current.screenMouseY = input.y;
@@ -618,7 +624,7 @@ export const EditWorkspace: React.FC<{ onExport: () => void }> = ({ onExport }) 
     }
 
     // Zoom tool
-    if (activeTool === 'zoom') {
+    if (intent === 'zoom') {
       const factor = input.altKey ? 0.75 : 1.35;
       const next = zoomAtCanvasPoint(canvasRef.current, currentDoc, { zoom, panX, panY }, zoom * factor, e.clientX, e.clientY);
       setZoom(next.zoom);
@@ -936,6 +942,7 @@ export const EditWorkspace: React.FC<{ onExport: () => void }> = ({ onExport }) 
 
   // Canvas Pointer Up / Cancel
   const handlePointerUp = async (e?: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e?.button === 2) return;
     if (e && e.currentTarget && typeof e.currentTarget.hasPointerCapture === 'function') {
       try {
         if (e.currentTarget.hasPointerCapture(e.pointerId)) {
@@ -1178,6 +1185,31 @@ export const EditWorkspace: React.FC<{ onExport: () => void }> = ({ onExport }) 
       ? 'cursor-crosshair'
       : 'cursor-default';
 
+  const canvasMenuItems = (clientX?: number, clientY?: number): ContextMenuItem[] => {
+    if (!currentDoc) return [];
+    const doc = currentDoc, target = selectedLayerId;
+    const view = (run: () => unknown) => () => { guardMenuDocument(defaultDocumentManager, doc.id, doc); return run(); };
+    const layer = (run: () => unknown) => () => { if (target) guardMenuLayer(defaultDocumentManager, doc, target); return run(); };
+    const locked = !target || isLayerLocked(doc, target);
+    const reason = !target ? '请先选择图层' : '图层或父组已锁定';
+    const point = getDocCoords(clientX ?? canvasRef.current!.getBoundingClientRect().left + canvasRef.current!.clientWidth / 2, clientY ?? canvasRef.current!.getBoundingClientRect().top + canvasRef.current!.clientHeight / 2);
+    const hits = flattenLayerTree(doc.layers).filter(item => item.type !== 'group' && hitTestLayerTree(doc, point.docX, point.docY, item.id)).reverse();
+    return [
+      { id: 'fit', label: '适合窗口', shortcut: 'Ctrl+0', run: view(resetViewport) },
+      { id: 'actual', label: '100%', shortcut: 'Ctrl+1', run: view(() => { if (canvasRef.current) { setZoom(editActualSizeZoom(canvasRef.current, doc)); setPan(0, 0); } }) },
+      { id: 'zoom-in', label: '放大', icon: <ZoomIn />, run: view(() => setZoom(useEditStore.getState().zoom * 1.25)) },
+      { id: 'zoom-out', label: '缩小', icon: <ZoomOut />, run: view(() => setZoom(useEditStore.getState().zoom * .8)) },
+      { id: 'hits', label: '鼠标下的图层', separatorBefore: true, disabled: !hits.length, reason: '此处没有可见图层', children: hits.map(item => ({ id: item.id, label: item.name, run: () => { guardMenuLayer(defaultDocumentManager, doc, item.id, 'none'); selectLayer(item.id); } })) },
+      { id: 'select-all', label: '全选画布', shortcut: 'Ctrl+A', separatorBefore: true, run: view(() => selectAll(doc.id)) },
+      { id: 'clear-selection', label: '取消选区', shortcut: 'Ctrl+D', disabled: !doc.selection, reason: '当前没有选区', run: view(() => clearSelection(doc.id)) },
+      { id: 'invert-selection', label: '反选', shortcut: 'Ctrl+Shift+I', disabled: !doc.selection, reason: '当前没有选区', run: view(() => invertSelection(doc.id)) },
+      { id: 'transform', label: '变换图层', separatorBefore: true, disabled: locked, reason, children: [
+        { id: 'controls', label: '显示变换控件', run: layer(() => { setActiveTool('move'); setShowTransformControls(true); }) },
+        { id: 'flip-x', label: '水平翻转', run: layer(() => defaultLayerOperationService.flip(doc.id, target!, 'horizontal')) },
+        { id: 'flip-y', label: '垂直翻转', run: layer(() => defaultLayerOperationService.flip(doc.id, target!, 'vertical')) },
+      ] },
+    ];
+  };
   return (
     <div className="h-full w-full bg-studio-950 flex flex-col overflow-hidden select-none studio-workspace edit-workbench">
       {/* Top Options & Actions Bar */}
@@ -1318,12 +1350,16 @@ export const EditWorkspace: React.FC<{ onExport: () => void }> = ({ onExport }) 
         {/* Central Canvas Viewport - Neutral 18% Gray Surround (Rule 8 & Stage E) */}
         <main
           ref={viewportContainerRef}
+          tabIndex={0} aria-label="编辑画布"
+          onContextMenu={event => canvasMenu.open(event, canvasMenuItems(event.clientX, event.clientY), '编辑画布操作')}
+          onKeyDown={event => canvasMenu.key(event, () => canvasMenuItems(), '编辑画布操作')}
           style={{ backgroundColor: canvasBackground }}
           className="edit-canvas-viewport flex-1 flex items-center justify-center relative overflow-hidden"
         >
           {/* Real Canvas element managed by WebGLImageEngine */}
           <canvas
             ref={canvasRef}
+            tabIndex={0} aria-label="编辑图像"
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
@@ -1418,6 +1454,7 @@ export const EditWorkspace: React.FC<{ onExport: () => void }> = ({ onExport }) 
           )}
         </aside>
       </div>
+      {canvasMenu.node}
     </div>
   );
 };

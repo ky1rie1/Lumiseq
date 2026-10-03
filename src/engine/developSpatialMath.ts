@@ -1,4 +1,5 @@
 import type { DevelopSettings } from '../types/develop';
+import { applyDetailV2 } from './developDetailV2';
 import { type RGB } from './developColorMath';
 
 /** Detail-only CPU counterpart; wavelet denoise runs before this, global haze after. */
@@ -6,6 +7,15 @@ export function applySpatialPixel(
   pixels: Float32Array, width: number, height: number, x: number, y: number,
   settings: DevelopSettings, scale = 1,
 ): RGB {
+  if(settings.renderingVersion===2){
+    const radius=(sigma:number)=>Math.ceil(3*Math.max(.35,sigma));
+    const halo=(settings.texture?2*radius(scale):0)+(settings.clarity?2*radius(4*scale):0)+(settings.detail.sharpenAmount?radius(Math.max(.5,settings.detail.sharpenRadius)*scale):0);
+    const left=Math.max(0,x-halo),top=Math.max(0,y-halo),right=Math.min(width,x+halo+1),bottom=Math.min(height,y+halo+1);
+    const w=right-left,h=bottom-top,region=new Float32Array(w*h*3);
+    for(let row=0;row<h;row++)region.set(pixels.subarray(((top+row)*width+left)*3,((top+row)*width+right)*3),row*w*3);
+    const result=applyDetailV2(region,w,h,settings,scale),i=((y-top)*w+x-left)*3;
+    return [result[i],result[i+1],result[i+2]];
+  }
   const pixel = (px: number, py: number): RGB => {
     const offset = (py * width + px) * 3;
     return [pixels[offset], pixels[offset + 1], pixels[offset + 2]];
@@ -46,4 +56,12 @@ export function applySpatialPixel(
     if (Math.hypot(...diff) > detail.sharpenThreshold / 255) color = color.map((v,i) => v + diff[i] * detail.sharpenAmount / 100) as RGB;
   }
   return color;
+}
+
+/** Batch spatial processing avoids repeating image-wide decomposition per pixel. */
+export function applySpatialImage(pixels:Float32Array,width:number,height:number,settings:DevelopSettings,scale=1):Float32Array {
+ if(settings.renderingVersion===2)return applyDetailV2(pixels,width,height,settings,scale);
+ const output=new Float32Array(pixels.length);
+ for(let y=0;y<height;y++)for(let x=0;x<width;x++)output.set(applySpatialPixel(pixels,width,height,x,y,settings,scale),(y*width+x)*3);
+ return output;
 }

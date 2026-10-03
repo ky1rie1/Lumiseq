@@ -81,8 +81,26 @@ export function applyRelativeWhiteBalance(rgb: RGB, matrix: number[]): RGB {
  const before=luminance(rgb),after=luminance(adjusted);
  return adjusted.map(v=>v*(after>1e-8?before/after:1)) as RGB;
 }
-export function applyBaseTone(rgb: RGB, settings: Pick<DevelopSettings,'exposure'|'contrast'|'shadows'|'highlights'|'whites'|'blacks'>): RGB {
+/** Positive-derivative luminance mapping. Neutral controls preserve working HDR.
+ * Exposure precedes endpoints, contrast, shadow toe, and highlight shoulder. */
+export function toneLuminanceV2(y: number, s: Pick<DevelopSettings,'contrast'|'shadows'|'highlights'|'whites'|'blacks'>): number {
+ y *= Math.exp(s.blacks/100*Math.LN2/(1+y/.18));
+ y *= Math.exp(s.whites/100*Math.LN2*y/(y+.5));
+ if(s.contrast) y=.18*Math.expm1(Math.log1p(y/.18)*2**(s.contrast/100));
+ y *= Math.exp(s.shadows/100*.75/(1+y/.18));
+ if(s.highlights<0) {const d=Math.max(0,y-.35);y=Math.min(y,.35)+d/(1-s.highlights/100*1.5*d);}
+ else if(s.highlights>0) y*=1+s.highlights/100*.75*y/(y+.55);
+ return y;
+}
+export function applyBaseTone(rgb: RGB, settings: Pick<DevelopSettings,'exposure'|'contrast'|'shadows'|'highlights'|'whites'|'blacks'|'renderingVersion'>): RGB {
+ if (settings.renderingVersion!==undefined && settings.renderingVersion!==1 && settings.renderingVersion!==2) throw new Error('Unsupported rendering version');
  let color=rgb.map(v=>v*2**settings.exposure) as RGB;
+ if (settings.renderingVersion === 2) {
+  const y=luminance(color),m=Math.abs(y);
+  const target=toneLuminanceV2(m,settings);
+  const gain=m>1e-12 ? target/m : 2**(settings.contrast/100)*Math.exp(settings.blacks/100*Math.LN2+settings.shadows/100*.75);
+  return color.map(v=>v*gain) as RGB;
+ }
  const y=luminance(color),bounded=Math.max(0,Math.min(1,y));
  let gain=(1+settings.shadows/100/(1+Math.exp((y-.25)*12))*.75)*(1+settings.highlights/100/(1+Math.exp(-(y-.55)*10))*.75);
  gain*=1+settings.whites/100*bounded**2*.6;
@@ -108,12 +126,40 @@ export function sampleDevelopCurve(value: number, lut: Float32Array, channel: nu
  // Preserve HDR distance above the endpoint; no premature clipping.
  return mapped+Math.max(0,value-1)+Math.min(0,value);
 }
+function displayHsv(rgb: RGB): RGB {
+ const display=rgb.map(linearToSrgb),max=Math.max(...display),min=Math.min(...display),delta=max-min;
+ let hue=0;
+ if(delta>1e-10)hue=(max===display[0] ? ((display[1]-display[2])/delta+6)%6 : max===display[1] ? (display[2]-display[0])/delta+2 : (display[0]-display[1])/delta+4)/6;
+ return [hue,delta/(max+1e-10),max];
+}
+
+/** Circular eight-channel HSL, in the same extended display domain as native/GPU. */
+export function applyDevelopHsl(rgb: RGB,hsl:DevelopSettings['hsl']): RGB {
+ const names=['red','orange','yellow','green','aqua','blue','purple','magenta'] as const;
+ if(!names.some(name=>hsl[name].hue || hsl[name].saturation || hsl[name].luminance))return rgb;
+ const hsv=displayHsv(rgb),centers=[0,30,60,120,180,240,285,325],widths=[45,35,40,60,50,50,45,45];
+ let total=0,hue=0,saturation=0,value=0;
+ for(let i=0;i<8;i++){
+  const absolute=Math.abs(hsv[0]*360-centers[i]),distance=Math.min(absolute,360-absolute);
+  if(distance>=widths[i])continue;
+  const weight=.5*(1+Math.cos(Math.PI*distance/widths[i])),setting=hsl[names[i]];
+  total+=weight;hue+=weight*setting.hue*.3;saturation+=weight*(1+setting.saturation/100);value+=weight*setting.luminance/200;
+ }
+ if(total<=1e-4)return rgb;
+ hsv[0]=((hsv[0]+hue/total/360)%1+1)%1;
+ hsv[1]=Math.max(0,Math.min(1,hsv[1]*saturation/total));hsv[2]=Math.max(0,hsv[2]*(1+value/total));
+ return [1,2/3,1/3].map(offset=>{
+  const p=Math.abs(((hsv[0]+offset)%1)*6-3);
+  return srgbToLinear(hsv[2]*(1-hsv[1]+hsv[1]*Math.max(0,Math.min(1,p-1))));
+ }) as RGB;
+}
+
 export function applyDevelopColor(rgb: RGB,settings: DevelopSettings,lut: Float32Array): RGB {
  let color=rgb;
  if(!curvesAreNeutral(settings.curves))color=color.map((v,c)=>srgbToLinear(sampleDevelopCurve(linearToSrgb(v),lut,c))) as RGB;
- const max=Math.max(...color),min=Math.min(...color),sat=max>1e-8?(max-min)/max:0;
- const display=color.map(v=>linearToSrgb(Math.max(0,v))),displayMax=Math.max(...display),displayMin=Math.min(...display);
- let hue=0;if(displayMax>displayMin){const d=displayMax-displayMin;hue=(displayMax===display[0]?(display[1]-display[2])/d+(display[1]<display[2]?6:0):displayMax===display[1]?(display[2]-display[0])/d+2:(display[0]-display[1])/d+4)/6;}
+ color=applyDevelopHsl(color,settings.hsl);
+ const max=Math.max(...color),min=Math.min(...color),sat=(max-min)/Math.max(1e-4,max);
+ const hue=displayHsv(color)[0];
  if(settings.vibrance){let boost=(1-sat)*settings.vibrance/100;if(hue>=.02&&hue<.12)boost*=.45;const y=luminance(color);color=color.map(v=>y+(v-y)*Math.max(0,Math.min(2.5,1+boost))) as RGB;}
  if(settings.saturation){const y=luminance(color);color=color.map(v=>y+(v-y)*Math.max(0,1+settings.saturation/100)) as RGB;}
  return color;

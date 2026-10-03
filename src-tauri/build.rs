@@ -4,6 +4,17 @@ use std::process::Command;
 
 fn main() {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
+    let git = |args: &[&str]| Command::new("git").args(args).current_dir(&manifest_dir).output().ok().filter(|output| output.status.success()).and_then(|output| String::from_utf8(output.stdout).ok()).map(|text| text.trim().to_owned());
+    let commit = git(&["rev-parse", "HEAD"]).unwrap_or_else(|| "unknown".into());
+    let dirty = git(&["status", "--porcelain"]).map_or(true, |status| !status.is_empty());
+    let tag = git(&["describe", "--tags", "--exact-match", "HEAD"]).unwrap_or_default();
+    let version = env::var("CARGO_PKG_VERSION").unwrap();
+    let stable = !dirty && env::var("PROFILE").as_deref() == Ok("release") && (tag == version || tag == format!("v{version}"));
+    println!("cargo:rustc-env=LUMISEQ_BUILD_COMMIT={commit}");
+    println!("cargo:rustc-env=LUMISEQ_BUILD_DIRTY={dirty}");
+    println!("cargo:rustc-env=LUMISEQ_BUILD_CHANNEL={}", if stable { "stable" } else { "development" });
+    // Recompute identity for every build, including uncommitted source changes.
+    println!("cargo:rerun-if-changed=..");
     let native_lib_dir = PathBuf::from(&manifest_dir).join("native/libraw/lib");
     let gpr_dir = PathBuf::from(&manifest_dir).join("native/gpr");
     let out_dir = PathBuf::from(env::var_os("OUT_DIR").unwrap());

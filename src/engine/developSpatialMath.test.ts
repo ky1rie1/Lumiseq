@@ -13,6 +13,7 @@ describe('linear CPU spatial reference', () => {
   });
   it('matches the hand-computed USM edge in native export', () => {
     const settings = createDefaultDevelopSettings(false);
+    settings.renderingVersion=1;
     settings.detail.sharpenAmount = 100;
     const rgb = Float32Array.from([.25,.25,.25,.25,.25,.25,.7,.7,.7,.7,.7,.7,.7,.7,.7]);
     for (const value of applySpatialPixel(rgb, 5, 1, 2, 0, settings, 1)) expect(value).toBeCloseTo(.80125, 6);

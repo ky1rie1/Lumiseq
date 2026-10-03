@@ -1,22 +1,33 @@
 import { Children, isValidElement, useRef, type ReactNode } from 'react';
 import { Search, X } from 'lucide-react';
 import { DEVELOP_GROUPS, nextDevelopGroup, visibleDevelopSections, type DevelopGroup } from './developTools';
+import { useContextMenu, type ContextMenuItem } from '../../shared/ContextMenu';
+import { useAppStore } from '../../../stores/useAppStore';
 
 /** View-only organization: existing section components and operation handlers remain mounted. */
-export function DevelopToolBrowser({ children, group, setGroup, query, setQuery }: {
+export function DevelopToolBrowser({ children, group, setGroup, query, setQuery, contextItems, contextScope }: {
   children: ReactNode; group: DevelopGroup; setGroup: (group: DevelopGroup) => void;
   query: string; setQuery: (query: string) => void;
+  contextItems?: (group: DevelopGroup) => ContextMenuItem[];
+  contextScope?: string;
 }) {
+  const status = useAppStore(state => state.setStatusMessage);
+  const menu = useContextMenu(contextScope, status);
   const tabRefs = useRef(new Map<DevelopGroup, HTMLButtonElement>());
   const visible = visibleDevelopSections(group, query);
   return <div className="develop-tool-browser">
+    {menu.node}
     <div className="develop-tool-navigation">
       <div className="develop-tool-groups" role="tablist" aria-label="调色工具分组">
         {DEVELOP_GROUPS.map(item => <button key={item.id} type="button" role="tab"
           id={`develop-tab-${item.id}`} aria-controls="develop-tool-results" aria-selected={item.id === group}
           tabIndex={item.id === group ? 0 : -1}
           ref={element => { if (element) tabRefs.current.set(item.id, element); else tabRefs.current.delete(item.id); }}
+          onContextMenu={event => { const items = contextItems?.(item.id); if (items?.length) menu.open(event, items, item.label); }}
           onClick={() => { setGroup(item.id); setQuery(''); }} onKeyDown={event => {
+            const items = contextItems?.(item.id);
+            if (items?.length) menu.key(event, () => items, item.label);
+            if (event.defaultPrevented) return;
             const next = nextDevelopGroup(group, event.key);
             if (next) { event.preventDefault(); event.stopPropagation(); setGroup(next); setQuery(''); tabRefs.current.get(next)?.focus(); }
           }}>{item.label}</button>)}

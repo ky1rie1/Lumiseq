@@ -2,6 +2,7 @@
 
 ## Unreleased — RAW quality and compatibility
 
+- Remove nine unreferenced legacy modules, including the early RAW shader, duplicate AI tool registry and retired settings dialogs. Active processing, provider and settings entry points remain covered by their existing regressions.
 - Decode camera-space samples before float white balance and camera-to-working conversion. New RAW projects use RGBA32F working pixels, LF32 overview/tile transport and verified RGBA32F GPU targets; signed gamut and highlight headroom survive until delivery. Existing projects retain processing version 1.
 - Apply Sony active crop and embedded distortion, chromatic aberration and shading tables. Correct the A6700 sample to 6192×4128; bounds-safe sensor mapping avoids invented black borders.
 - Add a reversible separate RAW variant for uncorrected inspection or explicit legacy-project upgrade. Preserve the original project; refuse coordinate migration with local masks. Persist correction mode/provenance and expose the same operation through AI/MCP.

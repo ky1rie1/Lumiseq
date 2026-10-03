@@ -54,6 +54,23 @@ it('decodes a valid RAW even when no embedded JPEG is available',async()=>{
   expect(defaultDocumentManager.getDevelopDocument(doc.id)?.rawState).toBe('ready');
 });
 
+it('waits for working RAW pixels instead of publishing a camera JPEG that changes brightness after decode',async()=>{
+  const doc=openRaw();
+  native.extractRawThumbnail.mockResolvedValue(new Uint8Array([255,216]));
+  const decode=deferred<ReturnType<typeof result>>();native.decodeRawImage.mockReturnValue(decode.promise);
+  vi.spyOn(defaultImageEngine,'loadAsset').mockResolvedValue({width:20,height:10});
+  const loading=useDevelopStore.getState().startRawLoadingPipeline(doc.id);
+  await vi.waitFor(()=>expect(native.decodeRawImage).toHaveBeenCalledOnce());
+  const pending=defaultDocumentManager.getDevelopDocument(doc.id)!;
+  const interimSource=pending.sourceAssetId||pending.previewAssetId;
+  decode.resolve(result('stable-raw-source',true));await loading;
+  expect(interimSource).toBeUndefined();
+  expect(native.extractRawThumbnail).not.toHaveBeenCalled();
+  const ready=defaultDocumentManager.getDevelopDocument(doc.id)!;
+  expect(ready.rawState).toBe('ready');expect(ready.sourceAssetId).toBeTruthy();
+  expect(ready.sourceAssetId).toBe(ready.previewAssetId);
+});
+
 it('releases both native and browser sources if the document closes during linear-preview IPC',async()=>{
   const doc=openRaw(),linear=deferred<{width:number;height:number;data:Uint16Array}>();
   native.decodeRawImage.mockResolvedValue(result('linear-native',true));

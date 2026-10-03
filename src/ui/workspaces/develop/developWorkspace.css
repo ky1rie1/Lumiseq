@@ -18,6 +18,8 @@
 .develop-empty-state > p { margin:0; max-width:430px; line-height:1.6; }
 .develop-empty-open { margin-top:3px; padding:8px 14px; border:1px solid #ffffff22; border-radius:6px; background:#ffffff0b; color:#dce2ea; font-size:12px; }
 .develop-empty-open:hover { background:#ffffff14; }
+.develop-loading-state { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; padding:24px; color:var(--ui-muted); font-size:12px; text-align:center; }
+.develop-loading-state small { max-width:420px; overflow-wrap:anywhere; color:var(--ui-danger); }
 .develop-controls-panel > .p-3.space-y-2\.5 { display:flex; flex-direction:column; gap:8px; padding:12px; }
 .develop-controls-panel > .p-3.space-y-2\.5 > * { margin-top:0; }
 .develop-controls-panel .accordion-section { padding:0; border:1px solid #ffffff12; border-radius:7px; background:#ffffff04; overflow:hidden; }

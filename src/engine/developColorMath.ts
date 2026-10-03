@@ -86,10 +86,15 @@ export function applyRelativeWhiteBalance(rgb: RGB, matrix: number[]): RGB {
 export function toneLuminanceV2(y: number, s: Pick<DevelopSettings,'contrast'|'shadows'|'highlights'|'whites'|'blacks'>): number {
  y *= Math.exp(s.blacks/100*Math.LN2/(1+y/.18));
  y *= Math.exp(s.whites/100*Math.LN2*y/(y+.5));
- if(s.contrast) y=.18*Math.expm1(Math.log1p(y/.18)*2**(s.contrast/100));
- y *= Math.exp(s.shadows/100*.75/(1+y/.18));
- if(s.highlights<0) {const d=Math.max(0,y-.35);y=Math.min(y,.35)+d/(1-s.highlights/100*1.5*d);}
- else if(s.highlights>0) y*=1+s.highlights/100*.75*y/(y+.55);
+ if(s.contrast) {
+  const power=2**(s.contrast/100);
+  // Normalize at 18% gray: contrast must darken and lighten opposite sides.
+  y=.18*Math.expm1(Math.log1p(y/.18)*power)/Math.expm1(Math.LN2*power);
+ }
+ y *= 2**(s.shadows/100*2.5/(1+y/.12)**2);
+ const d=Math.max(0,y-.18);
+ if(s.highlights<0) y=Math.min(y,.18)+d/(1-s.highlights/100*1.5*d);
+ else if(s.highlights>0) y+=s.highlights/100*1.5*d*d/(y+.18);
  return y;
 }
 export function applyBaseTone(rgb: RGB, settings: Pick<DevelopSettings,'exposure'|'contrast'|'shadows'|'highlights'|'whites'|'blacks'|'renderingVersion'>): RGB {
@@ -98,7 +103,8 @@ export function applyBaseTone(rgb: RGB, settings: Pick<DevelopSettings,'exposure
  if (settings.renderingVersion === 2) {
   const y=luminance(color),m=Math.abs(y);
   const target=toneLuminanceV2(m,settings);
-  const gain=m>1e-12 ? target/m : 2**(settings.contrast/100)*Math.exp(settings.blacks/100*Math.LN2+settings.shadows/100*.75);
+  const power=2**(settings.contrast/100);
+  const gain=m>1e-12 ? target/m : power/Math.expm1(Math.LN2*power)*2**(settings.blacks/100+settings.shadows/100*2.5);
   return color.map(v=>v*gain) as RGB;
  }
  const y=luminance(color),bounded=Math.max(0,Math.min(1,y));

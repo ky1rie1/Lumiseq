@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import { createDefaultDevelopSettings } from '../document/DevelopDocument';
 import { applySpatialImage,applySpatialPixel } from './developSpatialMath';
-import { applyBaseTone } from './developColorMath';
+import { applyBaseTone, toneLuminanceV2 } from './developColorMath';
 import { DevelopProjectSerializer } from '../project/DevelopProjectSerializer';
 import { createDevelopDocument } from '../document/DevelopDocument';
 import { AssetManager } from '../assets/AssetManager';
@@ -63,4 +63,37 @@ it('v2 compressed HDR staircase is monotonic with progressively lower gain',()=>
  const r=[.18,.5,1,2,4,8,16].map(v=>applyBaseTone([v,v,v],s)[0]);
  for(let i=1;i<r.length;i++)expect(r[i]).toBeGreaterThan(r[i-1]);
  expect(r.at(-1)!/16).toBeLessThan(.08);expect(r[4]).toBeLessThan(1.5);
+});
+it.each([-100,-50,50,100])('contrast %s pivots at middle gray and changes both sides in opposite directions',contrast=>{
+ const s=createDefaultDevelopSettings(true);s.contrast=contrast;
+ expect(toneLuminanceV2(.18,s)).toBeCloseTo(.18,10);
+ expect((toneLuminanceV2(.02,s)-.02)*contrast).toBeLessThan(0);
+ expect((toneLuminanceV2(.5,s)-.5)*contrast).toBeGreaterThan(0);
+});
+it('negative highlights affect diffuse highlights while preserving middle gray and shadows',()=>{
+ const s=createDefaultDevelopSettings(true);s.highlights=-100;
+ expect(toneLuminanceV2(.18,s)).toBeCloseTo(.18,10);
+ expect(toneLuminanceV2(.02,s)).toBeCloseTo(.02,10);
+ expect(toneLuminanceV2(.5,s)).toBeLessThan(.43);
+});
+it('positive highlights preserve shadows and middle gray',()=>{
+ const s=createDefaultDevelopSettings(true);s.highlights=100;
+ expect(toneLuminanceV2(.02,s)).toBeCloseTo(.02,10);
+ expect(toneLuminanceV2(.18,s)).toBeCloseTo(.18,10);
+ expect(toneLuminanceV2(.5,s)).toBeGreaterThan(.6);
+});
+it('shadows lift deep detail with useful strength and negligible highlight spill',()=>{
+ const s=createDefaultDevelopSettings(true);s.shadows=100;
+ expect(toneLuminanceV2(.01,s)).toBeGreaterThan(.04);
+ expect(toneLuminanceV2(1,s)).toBeLessThan(1.025);
+ expect(toneLuminanceV2(0,s)).toBe(0);
+});
+it('every tone control remains monotone and finite across its range and HDR',()=>{
+ const ramp=Array.from({length:240},(_,i)=>10**(-9+i*10/239));
+ for(const name of ['contrast','highlights','shadows','whites','blacks'] as const)for(const value of [-100,-50,0,50,100]){
+  const s=createDefaultDevelopSettings(true);s[name]=value;
+  const out=ramp.map(y=>toneLuminanceV2(y,s));
+  expect(out.every(Number.isFinite)).toBe(true);
+  expect(out.every((y,i)=>i===0||y>out[i-1])).toBe(true);
+ }
 });

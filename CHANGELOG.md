@@ -2,6 +2,8 @@
 
 ## Unreleased - RAW detail, automatic tone and workspace interactions
 
+- Correct the version-2 contrast pivot at 18% linear gray: positive contrast darkens lower tones and brightens upper tones rather than increasing the whole image's exposure. Refine highlight targeting and useful shadow lift consistently across CPU, GPU and native delivery.
+- Present only decoded working RAW in the adjustment canvas. Loading, restored cached previews and first-render failures cannot expose a camera JPEG or stale photo before editable pixels are painted. Automatic tone and export wait for the rendered preview.
 - Fit exposure, contrast, highlights, shadows, whites and blacks jointly from bounded native float samples. Preserve white balance, curves, HSL and local masks; distinguish low-key scenes and reject stale or cancelled analysis before one undoable commit.
 - Add a separate rendering version for normalized Gaussian/guided luminance detail, sequential sharpening, noise transitions and point-light halo control. New documents use version 2; existing documents and resets retain their version. An explicit upgrade creates a separate document with the same RAW decoding and mask coordinates.
 - Match CPU, GPU and native tone/detail ordering, including extended-range HSL and complete region/stripe support. Add actual WebView2 round-point, rotation, signed/HDR and useful-strength regressions.

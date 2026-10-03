@@ -104,6 +104,9 @@ export const DevelopWorkspace: React.FC<{ onExport: () => void }> = ({ onExport 
   const isAiPanelOpen = useAppStore((s) => s.isAiPanelOpen);
   const toggleAiPanel = useAppStore((s) => s.toggleAiPanel);
 
+  const [paintedSource, setPaintedSource] = useState<string | null>(null);
+  const [previewFailure, setPreviewFailure] = useState<{key:string|null;message:string} | null>(null);
+
   // Develop parameter drag actions (Transaction coalescing, Rule 2)
   const beginSettingDrag = useDevelopStore((s) => s.startSettingDrag);
   const previewSettingDrag = useDevelopStore((s) => s.previewSettingDrag);
@@ -117,6 +120,11 @@ export const DevelopWorkspace: React.FC<{ onExport: () => void }> = ({ onExport 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const comparisonCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const renderScheduler = useRef(new LatestPreviewScheduler());
+  const attachPreviewCanvas = useCallback((canvas:HTMLCanvasElement|null) => {
+    renderScheduler.current.cancel();
+    canvasRef.current=canvas;
+    setPaintedSource(null);
+  }, []);
   const previewSurface = useRef<ReusablePreviewSurface | null>(null);
   const referencePreview = useRef(new ReferencePreviewCache<HTMLCanvasElement>());
   const gpuFallbackReason = useRef<string | undefined>(undefined);
@@ -204,7 +212,11 @@ export const DevelopWorkspace: React.FC<{ onExport: () => void }> = ({ onExport 
   const [maskDrawMode, setMaskDrawMode] = useState<MaskDrawMode | null>(null);
   const viewport = useDevelopViewport(currentDoc?.id, currentDoc?.width ?? 1, currentDoc?.height ?? 1, !!comparisonId, !!maskDrawMode);
   const previewSize = fitPreviewDimensions(currentDoc?.width ?? 1, currentDoc?.height ?? 1, previewQuality, isAdjusting);
-  const overviewAsset = currentDoc?.sourceAssetId || currentDoc?.previewAssetId;
+  const overviewAsset = currentDoc?.isRaw && currentDoc.rawState !== 'ready'
+    ? undefined : currentDoc?.sourceAssetId || currentDoc?.previewAssetId;
+  const previewSourceKey = currentDoc && overviewAsset ? `${currentDoc.id}:${overviewAsset}` : null;
+  const isPreviewPainted = !!previewSourceKey && paintedSource === previewSourceKey;
+  const previewError = rawError || (previewFailure?.key===previewSourceKey ? previewFailure.message : null);
   const overviewHandle = overviewAsset ? defaultAssetManager.getHandle(overviewAsset) : null;
   const detail = useRawDetailPreview({
     documentId: currentDoc?.id,
@@ -239,7 +251,7 @@ export const DevelopWorkspace: React.FC<{ onExport: () => void }> = ({ onExport 
     };
   }, []);
 
-  // Trigger 3-Stage RAW Loading when opening a RAW file
+  // Decode RAW before presenting its editable working image.
   useEffect(() => {
     if (currentDoc && currentDoc.isRaw && currentDoc.rawState === 'unloaded' && currentDoc.sourceUri && !currentDoc.sourceUri.startsWith('photos/')) {
       startRawLoadingPipeline(currentDoc.id);
@@ -252,7 +264,7 @@ export const DevelopWorkspace: React.FC<{ onExport: () => void }> = ({ onExport 
     renderScheduler.current.schedule(async isCurrent => {
       try {
       if (!currentDoc || !settings || !canvasRef.current) return;
-      const assetId = currentDoc.sourceAssetId || currentDoc.previewAssetId;
+      const assetId = overviewAsset;
       if (!assetId) return;
       const size = fitPreviewDimensions(currentDoc.width, currentDoc.height, previewQuality, isAdjusting);
       const original = showOriginal || comparisonId === 'original' ? createDefaultDevelopSettings(currentDoc.isRaw) : null;
@@ -283,6 +295,8 @@ export const DevelopWorkspace: React.FC<{ onExport: () => void }> = ({ onExport 
       };
       await paint(showOriginal && !comparisonId && original ? original : settings, canvasRef.current);
       if (!isCurrent()) return;
+      setPaintedSource(previewSourceKey);
+      setPreviewFailure(null);
       setPreviewRevision(value => value+1);
       setInspectedColor(null);
       defaultHistogramScheduler.schedule(canvasRef.current!, hist => { if (isCurrent()) setHistogramData(hist); });
@@ -297,10 +311,14 @@ export const DevelopWorkspace: React.FC<{ onExport: () => void }> = ({ onExport 
           await referencePreview.current.paintIfNeeded(key(), target, () => paint(reference, target), isCurrent, key);
         } else if (!reference) setComparisonId(null);
       }
-      } catch (error) { if (isCurrent()) setStatusMessage(`调色预览失败：${error instanceof Error ? error.message : String(error)}`); }
+      } catch (error) { if (isCurrent()) {
+        const message=error instanceof Error ? error.message : String(error);
+        setPreviewFailure({key:previewSourceKey,message});
+        setStatusMessage(`调色预览失败：${message}`);
+      } }
     });
     return () => { renderScheduler.current.cancel(); defaultHistogramScheduler.cancel(); };
-  }, [currentDoc, settings, showOriginal, comparisonId, previewQuality, isAdjusting, setHistogramData, setStatusMessage]);
+  }, [currentDoc, settings, overviewAsset, previewSourceKey, showOriginal, comparisonId, previewQuality, isAdjusting, setHistogramData, setStatusMessage]);
   const handleMaskDraw = useCallback(async (mode: MaskDrawMode, start: { x: number; y: number }, end: { x: number; y: number }, points: Array<{ x: number; y: number }>) => {
     if (!currentDoc) return;
     try {
@@ -485,6 +503,7 @@ export const DevelopWorkspace: React.FC<{ onExport: () => void }> = ({ onExport 
           {/* Before/After Toggle */}
           <button
             onClick={() => setShowOriginal(!showOriginal)}
+            disabled={!isPreviewPainted}
             className={`flex items-center space-x-1 px-2 py-0.5 rounded border transition-colors cursor-pointer text-2xs ${
               showOriginal
                 ? 'bg-amber-950/80 text-amber-300 border-amber-700 font-medium'
@@ -496,7 +515,7 @@ export const DevelopWorkspace: React.FC<{ onExport: () => void }> = ({ onExport 
             <span>{showOriginal ? '查看中: 原图' : '对比原图 (\\)'}</span>
           </button>
 
-          <button onClick={() => setComparisonId(comparisonId ? null : 'original')} className="px-2 py-0.5 rounded border border-studio-700 bg-studio-800 text-2xs">{comparisonId ? '关闭并排' : '并排对比'}</button>
+          <button disabled={!isPreviewPainted} onClick={() => setComparisonId(comparisonId ? null : 'original')} className="px-2 py-0.5 rounded border border-studio-700 bg-studio-800 text-2xs">{comparisonId ? '关闭并排' : '并排对比'}</button>
           {/* Pipeline Debug Toggle */}
           <button
             onClick={() => setShowDebugInspector(!showDebugInspector)}
@@ -512,7 +531,7 @@ export const DevelopWorkspace: React.FC<{ onExport: () => void }> = ({ onExport 
 
           <button
             onClick={onExport}
-            disabled={isExporting}
+            disabled={isExporting || !isPreviewPainted}
             className="flex items-center space-x-1 bg-studio-800 hover:bg-studio-700 text-studio-200 px-2 py-0.5 rounded border border-studio-700 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             title={currentDoc.isRaw ? '导出 JPEG、PNG 或 TIFF 成品' : '导出 JPEG 或 PNG 成品'}
           >
@@ -522,7 +541,7 @@ export const DevelopWorkspace: React.FC<{ onExport: () => void }> = ({ onExport 
 
           <button
             onClick={handleTransferToEdit}
-            disabled={isExporting}
+            disabled={isExporting || !isPreviewPainted}
             className="flex items-center space-x-1 bg-purple-950/80 hover:bg-purple-900 text-purple-300 px-2.5 py-0.5 rounded border border-purple-800 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             title="RAW 使用原始分辨率 PNG 转入；当前原生渲染器不支持的调整会给出提示"
           >
@@ -614,11 +633,18 @@ export const DevelopWorkspace: React.FC<{ onExport: () => void }> = ({ onExport 
             </div>
           )}
 
-          <div className="develop-image-plane" style={{transform:`translate(-50%, -50%) translate(${viewport.view.x}px, ${viewport.view.y}px)`}}>
+          {currentDoc.isRaw && !isPreviewPainted && (
+            <div className="develop-loading-state" role="status" aria-label="RAW 载入状态" aria-live="polite">
+              {rawState === 'error' || previewError ? <AlertCircle size={20}/> : <Loader2 size={20} className="animate-spin"/>}
+              <span>{rawState === 'error' ? 'RAW 解码失败' : previewError ? '调色预览失败' : rawState === 'ready' ? '正在生成调色预览' : '正在解码 RAW'}</span>
+              {previewError && <small>{previewError}</small>}
+            </div>
+          )}
+          <div className="develop-image-plane" aria-hidden={!isPreviewPainted} style={{visibility:isPreviewPainted?'visible':'hidden',transform:`translate(-50%, -50%) translate(${viewport.view.x}px, ${viewport.view.y}px)`}}>
           {comparisonId && <div className="develop-photo-frame relative shrink-0" style={{width:currentDoc.width*viewport.view.scale,height:currentDoc.height*viewport.view.scale}}><span className="absolute top-1 left-1 text-2xs bg-studio-950/80 px-2 py-1 z-10">{comparisonId === 'original' ? '原图' : currentDoc.settingsSnapshots?.find(s => s.id === comparisonId)?.name}</span><canvas ref={comparisonCanvasRef} className="w-full h-full block" /></div>}
           <div style={{ ...checkerStyle(checkerSize, checkerTone), width:currentDoc.width*viewport.view.scale,height:currentDoc.height*viewport.view.scale }} className="develop-photo-frame relative shrink-0">
             <canvas
-              ref={canvasRef}
+              ref={attachPreviewCanvas}
               className="w-full h-full block"
             />
             <PreviewClippingOverlay source={canvasRef.current} revision={previewRevision} shadows={warnShadows} highlights={warnHighlights} onCounts={setClippingCounts} onError={setStatusMessage}/>
@@ -683,12 +709,12 @@ export const DevelopWorkspace: React.FC<{ onExport: () => void }> = ({ onExport 
               <div><dt>输入</dt><dd>{currentDoc.isRaw?'LibRaw 相机白平衡 + 相机矩阵':'浏览器颜色解码'}</dd></div>
               <div><dt>工作</dt><dd>线性 sRGB · 浮点调色</dd></div>
               <div><dt>显示</dt><dd>sRGB · 8 位预览</dd></div>
-              <div><dt>输出</dt><dd>{currentDoc.isRaw?'PNG 16 位 / JPEG 8 位':'PNG / JPEG 8 位'}</dd></div>
-            </dl><p>RAW 输入为有界 16 位线性 sRGB；尚未支持自定义相机 DCP / ICC。显示依赖系统与屏幕，当前无打印软打样。</p></details>
+              <div><dt>输出</dt><dd>{currentDoc.isRaw?'PNG / TIFF 16 位 · ICC；JPEG 8 位':'PNG / JPEG 8 位'}</dd></div>
+            </dl><p>{currentDoc.isRaw && currentDoc.rawProcessingVersion===2?'RAW 工作数据保留为 32 位浮点；成品输出时量化。':'当前使用兼容输入管线。'}尚未支持自定义相机 DCP / ICC，当前无打印软打样。</p></details>
           </div>
 
           <div className="p-3 space-y-2.5">
-            <button type="button" onClick={handleAutoTone} disabled={isAutoToning || isAdjusting || !(currentDoc.sourceAssetId || currentDoc.previewAssetId)} className="w-full flex items-center justify-center gap-2 py-2 rounded border border-studio-700 bg-studio-800 hover:bg-studio-700 disabled:opacity-50" title="根据画面分布自动调整影调，并约束高光溢出；保留白平衡与色彩调整，可撤销。">
+            <button type="button" onClick={handleAutoTone} disabled={isAutoToning || isAdjusting || !isPreviewPainted} className="w-full flex items-center justify-center gap-2 py-2 rounded border border-studio-700 bg-studio-800 hover:bg-studio-700 disabled:opacity-50" title="根据画面分布自动调整影调，并约束高光溢出；保留白平衡与色彩调整，可撤销。">
               <Sparkles className="w-3.5 h-3.5" />{isAutoToning ? '正在分析…' : '自动'}
             </button>
             <DevelopToolBrowser group={toolGroup} setGroup={setToolGroup} query={toolQuery} setQuery={setToolQuery}

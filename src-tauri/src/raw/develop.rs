@@ -370,10 +370,14 @@ fn sample_mask(mask: &NativeDevelopMask, x: usize, y: usize, width: usize, heigh
 pub(super) fn tone_luminance_v2(mut y:f32,s:&NativeDevelopSettings)->f32 {
  y *= (s.blacks/100.0*std::f32::consts::LN_2/(1.0+y/0.18)).exp();
  y *= (s.whites/100.0*std::f32::consts::LN_2*y/(y+0.5)).exp();
- if s.contrast!=0 {y=0.18*((y/0.18).ln_1p()*2.0f32.powf(s.contrast as f32/100.0)).exp_m1();}
- y *= (s.shadows/100.0*0.75/(1.0+y/0.18)).exp();
- if s.highlights<0.0 {let d=(y-0.35).max(0.0);y=y.min(0.35)+d/(1.0-s.highlights/100.0*1.5*d);}
- else if s.highlights>0.0 {y*=1.0+s.highlights/100.0*0.75*y/(y+0.55);}y
+ if s.contrast!=0 {
+  let power=2.0f32.powf(s.contrast as f32/100.0);
+  y=0.18*((y/0.18).ln_1p()*power).exp_m1()/(std::f32::consts::LN_2*power).exp_m1();
+ }
+ y *= 2.0f32.powf(s.shadows/100.0*2.5/(1.0+y/0.12).powi(2));
+ let d=(y-0.18).max(0.0);
+ if s.highlights<0.0 {y=y.min(0.18)+d/(1.0-s.highlights/100.0*1.5*d);}
+ else if s.highlights>0.0 {y+=s.highlights/100.0*1.5*d*d/(y+0.18);}y
 }
 
 pub(super) fn base_tone_pixel(
@@ -391,7 +395,8 @@ pub(super) fn base_tone_pixel(
     }
     if settings.rendering_version == 2 {
         let y=luminance(rgb);let m=y.abs();let target=tone_luminance_v2(m,settings);
-        let gain=if m>1e-12 {target/m}else{2.0f32.powf(settings.contrast as f32/100.0)*(settings.blacks/100.0*std::f32::consts::LN_2+settings.shadows/100.0*0.75).exp()};
+        let power=2.0f32.powf(settings.contrast as f32/100.0);
+        let gain=if m>1e-12 {target/m}else{power/(std::f32::consts::LN_2*power).exp_m1()*2.0f32.powf(settings.blacks/100.0+settings.shadows/100.0*2.5)};
         return Ok(rgb.map(|v|v*gain));
     }
     let base_luma = luminance(rgb);
@@ -796,6 +801,28 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static NEXT_TEST_ID: AtomicU64 = AtomicU64::new(1);
+
+    #[test]
+    fn v2_contrast_pivots_and_tonal_controls_target_photographic_ranges() {
+        let mut s=settings();s.rendering_version=2;
+        for contrast in [-100,-50,50,100] {
+            s.contrast=contrast;
+            assert!((tone_luminance_v2(0.18,&s)-0.18).abs()<1e-6);
+            assert!((tone_luminance_v2(0.02,&s)-0.02)*(contrast as f32)<0.0);
+            assert!((tone_luminance_v2(0.5,&s)-0.5)*(contrast as f32)>0.0);
+        }
+        s.contrast=0;s.highlights=-100.0;
+        assert!((tone_luminance_v2(0.18,&s)-0.18).abs()<1e-6);
+        assert!(tone_luminance_v2(0.5,&s)<0.43);
+        s.highlights=100.0;
+        assert!((tone_luminance_v2(0.02,&s)-0.02).abs()<1e-6);
+        assert!((tone_luminance_v2(0.18,&s)-0.18).abs()<1e-6);
+        assert!(tone_luminance_v2(0.5,&s)>0.6);
+        s.highlights=0.0;s.shadows=100.0;
+        assert!(tone_luminance_v2(0.01,&s)>0.04);
+        assert!(tone_luminance_v2(1.0,&s)<1.025);
+        assert_eq!(tone_luminance_v2(0.0,&s),0.0);
+    }
     #[test]
     fn rendering_version_defaults_to_legacy_and_rejects_unknown_export_versions() {
         let mut value=serde_json::to_value(settings()).unwrap();value.as_object_mut().unwrap().remove("rendering_version");
@@ -818,17 +845,24 @@ mod tests {
     fn write_native_v2_parity_fixtures() {
         let destination=std::env::var("LUMISEQ_NATIVE_V2_FIXTURE").unwrap();
         let mut fixtures=Vec::new();
-        for name in ["subpixel-star","signed-hdr-edge","hdr-tone"] {
-            let (width,height)=if name=="hdr-tone" {(7,1)}else{(61,61)};
+        for name in ["subpixel-star","signed-hdr-edge","hdr-tone","contrast-negative","contrast-positive","highlights-negative","highlights-positive","shadows-negative","shadows-positive"] {
+            let tone_case=name!="subpixel-star" && name!="signed-hdr-edge";
+            let (width,height)=if tone_case {(7,1)}else{(61,61)};
             let source:Vec<[f32;3]>=(0..width*height).map(|i|{
                 let x=(i%width) as f32;let y=(i/width) as f32;
                 if name=="hdr-tone" {return [[0.18;3],[0.5;3],[1.0;3],[2.0;3],[4.0;3],[8.0;3],[16.0;3]][i];}
+                if tone_case {return [[-0.02;3],[0.0;3],[1e-9;3],[0.02;3],[0.18;3],[0.5;3],[2.0;3]][i];}
                 if name=="signed-hdr-edge" {return if x+0.7*y>50.0 {[2.0,-0.1,0.4]}else{[0.002,0.003,0.006]};}
                 let v=0.002+0.8*(-((x-30.25).powi(2)+(y-29.5).powi(2))/2.0).exp();[v;3]
             }).collect();
             let mut recipe=settings();recipe.rendering_version=2;
             if name=="hdr-tone" {recipe.exposure=-0.3;recipe.contrast=25;recipe.highlights=-90.0;recipe.shadows=30.0;recipe.whites=-20.0;recipe.blacks=-10.0;}
-            else {recipe.texture=if name=="signed-hdr-edge" {55.0}else{0.0};recipe.clarity=40.0;recipe.sharpen_amount=80.0;recipe.sharpen_radius=1.8;}
+            else if !tone_case {recipe.texture=if name=="signed-hdr-edge" {55.0}else{0.0};recipe.clarity=40.0;recipe.sharpen_amount=80.0;recipe.sharpen_radius=1.8;}
+            else {match name {
+                "contrast-negative"=>recipe.contrast=-100,"contrast-positive"=>recipe.contrast=100,
+                "highlights-negative"=>recipe.highlights=-100.0,"highlights-positive"=>recipe.highlights=100.0,
+                "shadows-negative"=>recipe.shadows=-100.0,"shadows-positive"=>recipe.shadows=100.0,_=>unreachable!(),
+            }}
             let buffer:Vec<_>=source.iter().flat_map(|rgb|[rgb[0],rgb[1],rgb[2],1.0]).flat_map(f32::to_le_bytes).collect();
             let asset=NativeImageAsset{id:name.into(),width,height,pixel_format:PixelFormat::RGBA32F,buffer,metadata:None,ref_count:1,created_at:0};
             let linear=super::super::linear_source::LinearSource::new(&asset).unwrap();
@@ -838,6 +872,38 @@ mod tests {
             fixtures.push(serde_json::json!({"name":name,"width":width,"height":height,"source":source,"recipe":recipe,"output":output}));
         }
         std::fs::write(destination,serde_json::to_vec(&serde_json::json!({"cases":fixtures})).unwrap()).unwrap();
+    }
+    #[test]
+    #[ignore="requires LUMISEQ_RAW_VALIDATION and LUMISEQ_RAW_REPORT_DIR; writes private acceptance images"]
+    fn real_float_camera_tonal_response_acceptance() {
+        let path=std::env::var("LUMISEQ_RAW_VALIDATION").unwrap();
+        let root=std::path::PathBuf::from(std::env::var("LUMISEQ_RAW_REPORT_DIR").unwrap());
+        std::fs::create_dir_all(&root).unwrap();
+        let decoder=crate::raw::ffi::SafeRawDecoder::new(&path);
+        let (width,height,format,buffer,metadata)=decoder.decode_scene(crate::raw::types::DemosaicQuality::High).unwrap();
+        assert_eq!(format,PixelFormat::RGBA32F);
+        let id="camera-tone-response";
+        global_asset_registry().register(NativeImageAsset{id:id.into(),width,height,pixel_format:format,buffer,metadata:Some(metadata),ref_count:1,created_at:0});
+        let packet=super::super::detail::render_raw_linear_preview(id).unwrap();
+        assert_eq!(&packet[..4],b"LF32");
+        let pw=u32::from_le_bytes(packet[4..8].try_into().unwrap()) as usize;
+        let ph=u32::from_le_bytes(packet[8..12].try_into().unwrap()) as usize;
+        std::fs::write(root.join("working-preview.lf32"),&packet).unwrap();
+        std::fs::write(root.join("working-preview.png"),global_asset_registry().with_asset(id,super::super::detail::display_preview_for_asset).unwrap().unwrap()).unwrap();
+        if let Ok(jpeg)=decoder.extract_thumbnail() {std::fs::write(root.join("camera-preview.jpg"),jpeg).unwrap();}
+        let overview=NativeImageAsset{id:"camera-tone-overview".into(),width:pw,height:ph,pixel_format:format,buffer:packet[12..].to_vec(),metadata:None,ref_count:1,created_at:0};
+        let linear=super::super::linear_source::LinearSource::new(&overview).unwrap();
+        let indices:Vec<_>=(0..256).map(|i|(i/16*ph/16+ph/32).min(ph-1)*pw+(i%16*pw/16+pw/32).min(pw-1)).collect();
+        let mut cases=Vec::new();
+        for (name,value) in [("contrast",-50),("contrast",50),("highlights",-100),("highlights",100),("shadows",-100),("shadows",100)] {
+            let mut recipe=settings();recipe.rendering_version=2;
+            match name {"contrast"=>recipe.contrast=value,"highlights"=>recipe.highlights=value as f32,"shadows"=>recipe.shadows=value as f32,_=>unreachable!()}
+            let output:Vec<_>=indices.iter().map(|i|base_tone_pixel(&linear,*i,&recipe,[1.0,0.0,0.0,0.0,1.0,0.0,0.0,0.0,1.0],1.0).unwrap()).collect();
+            assert!(output.iter().flatten().all(|v|v.is_finite()));
+            cases.push(serde_json::json!({"parameter":name,"value":value,"output":output}));
+        }
+        std::fs::write(root.join("native-tone-reference.json"),serde_json::to_vec(&serde_json::json!({"sourceWidth":width,"sourceHeight":height,"width":pw,"height":ph,"indices":indices,"cases":cases})).unwrap()).unwrap();
+        global_asset_registry().release(id);
     }
     #[test]
     #[ignore="requires LUMISEQ_RAW_VALIDATION and LUMISEQ_RAW_REPORT_DIR; writes private acceptance images"]

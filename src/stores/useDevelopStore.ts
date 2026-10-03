@@ -59,7 +59,7 @@ interface DevelopState {
   setHistogramData: (data: HistogramData | null) => void;
   loadDocument: (doc: DevelopDocument) => void;
 
-  // Phase 2.5: 3-Stage RAW Loading Pipeline
+  // Metadata followed by the immutable working RAW source.
   startRawLoadingPipeline: (docId: string) => Promise<void>;
 
   // Phase 2.5: Develop -> Edit Rendered Transfer
@@ -290,22 +290,7 @@ export const useDevelopStore = create<DevelopState>((set, get) => ({
           ? [...meta.white_balance_multipliers] as [number, number, number, number]
           : undefined }, 'Update RAW Metadata');
       }
-      // Stage 2: Fast embedded JPEG preview extraction
-      // A bitmap-only/missing thumbnail must not prevent sensor decoding.
-      const thumbBytes = await bridge.extractRawThumbnail(sourceUri).catch(() => null);
-      if (!isCurrent()) return;
-      if (thumbBytes && thumbBytes.length > 0) {
-        const thumbBlob = new Blob([thumbBytes as unknown as BlobPart], { type: 'image/jpeg' });
-        const handle = await defaultAssetManager.registerBlob(thumbBlob, 'image', `${doc.fileName}_preview.jpg`);
-        browserAssets.add(handle.id);
-        if (!isCurrent()) return;
-        await defaultImageEngine.loadAsset(handle.id, thumbBlob);
-        if (!publish({ previewAssetId: handle.id,
-          pipelineState: createColorPipelineState({ isRaw: true, isEmbeddedPreview: true }),
-          rawState: 'embedded-preview', rawProgress: 50 }, 'Display Embedded Preview')) return;
-        publishedBrowserAssets.add(handle.id);
-      }
-      // Stage 3: Background sensor demosaic into the versioned working source.
+      // Camera JPEG tone is unrelated to the editable source; publish only working RAW.
       if (!publish({ nativeAssetId: null, rawState: 'decoding', rawProgress: 70 }, 'Decoding RAW Sensor Data')) return;
       if (!isCurrent()) return;
       decodePending = true;

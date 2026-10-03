@@ -74,13 +74,15 @@ void main() {
         float sourceY = y;
         y *= exp(u_blacks / 100.0 * log(2.0) / (1.0 + y / 0.18));
         y *= exp(u_whites / 100.0 * log(2.0) * y / (y + 0.5));
-        if (u_contrast != 0.0) y = 0.18 * expMinusOne(logOnePlus(y / 0.18) * exp2(u_contrast / 100.0));
-        y *= exp(u_shadows / 100.0 * 0.75 / (1.0 + y / 0.18));
+        float contrastPower = exp2(u_contrast / 100.0);
+        float contrastNormalization = expMinusOne(log(2.0) * contrastPower);
+        if (u_contrast != 0.0) y = 0.18 * expMinusOne(logOnePlus(y / 0.18) * contrastPower) / contrastNormalization;
+        y *= exp2(u_shadows / 100.0 * 2.5 / pow(1.0 + y / 0.12, 2.0));
+        float d = max(0.0, y - 0.18);
         if (u_highlights < 0.0) {
-            float d = max(0.0, y - 0.35);
-            y = min(y, 0.35) + d / (1.0 - u_highlights / 100.0 * 1.5 * d);
-        } else if (u_highlights > 0.0) y *= 1.0 + u_highlights / 100.0 * 0.75 * y / (y + 0.55);
-        float gain = sourceY > 1e-12 ? y / sourceY : exp2(u_contrast / 100.0) * exp(u_blacks / 100.0 * log(2.0) + u_shadows / 100.0 * 0.75);
+            y = min(y, 0.18) + d / (1.0 - u_highlights / 100.0 * 1.5 * d);
+        } else if (u_highlights > 0.0) y += u_highlights / 100.0 * 1.5 * d * d / (y + 0.18);
+        float gain = sourceY > 1e-12 ? y / sourceY : contrastPower / contrastNormalization * exp2(u_blacks / 100.0 + u_shadows / 100.0 * 2.5);
         fragColor = vec4(linear * gain, tex.a);
         return;
     }
